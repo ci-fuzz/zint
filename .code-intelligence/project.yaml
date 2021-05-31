@@ -25,15 +25,15 @@ web_app_target_configs:
 
 ## The sanitizers to use for the fuzz tests
 ## By default, only address sanitizer is used.
-# sanitizers:
-#   - address
+sanitizers:
+  - address
 
 ## The fuzzing engines to use for the fuzz tests
 ## By default, only libfuzzer is used. Note that because Java and Go
 ## are only supported by libfuzzer, libfuzzer will always be used for
 ## Java and Go fuzz tests, independent of this setting.
-# engines:
-#  - libfuzzer
+engines:
+ - libfuzzer
 
 ## The run time after which the fuzz tests are cancelled and
 ## considered as having passed. Default value is 30 minutes.
