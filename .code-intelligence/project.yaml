@@ -18,7 +18,7 @@ build_container: "cifuzz/builders:zint"
 
 ## Paths to the fuzz tests to execute
 fuzz_tests:
-  - .code-intelligence/fuzz_targets/*.cpp
+  - .code-intelligence/fuzz_targets/all_barcodes_fuzzer.cpp
 
 ## Paths to web app fuzz target configs
 web_app_target_configs:
