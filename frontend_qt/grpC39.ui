@@ -10,6 +10,12 @@
     <height>131</height>
    </rect>
   </property>
+  <property name="maximumSize">
+   <size>
+    <width>600</width>
+    <height>16777215</height>
+   </size>
+  </property>
   <property name="windowTitle">
    <string>Form</string>
   </property>
@@ -29,7 +35,7 @@
      <item row="1" column="0">
       <widget class="QRadioButton" name="radC39HIBC">
        <property name="text">
-        <string>&amp;HIBC 39</string>
+        <string>H&amp;IBC 39</string>
        </property>
       </widget>
      </item>

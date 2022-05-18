@@ -39,36 +39,84 @@
  2016-10-14 2.5.2 HaO
 -   Include the upstream reverted image format
  2016-12-12 2.5.3 HaO
--	No changes here, take 2.5.1 framework files
+-   No changes here, take 2.5.1 framework files
  2017-05-12 2.6.0 HaO
--	No changes here, take 2.6 framework files
+-   No changes here, take 2.6 framework files
  2017-08-29 2.6.1 HaO
--	Framework 2.6.1 extensions
--	EAN/UPC Codes with included check digit
--	UPNQR Code
--	Misspelled symbology: AztecRunes
+-   Framework 2.6.1 extensions
+-   EAN/UPC Codes with included check digit
+-   UPNQR Code
+-   Misspelled symbology: AztecRunes
  2017-10-23 2.6.2 HaO
--	Framework 2.6.2 bugfixes
+-   Framework 2.6.2 bugfixes
 -   Allow dll unload
  2018-02-13 2.6.3 HaO
- -	Framework trunk update
- -	Added VIN and MailMark symbologies.
+ -  Framework trunk update
+ -  Added VIN and MailMark symbologies.
  2018-11-02 2.6.4 HaO
- -	Framework trunk update
- -	Add options -bold, -dotted, -dotsize, -dmre, -eci
- -	Implemented ECI logic
+ -  Framework trunk update
+ -  Add options -bold, -dotted, -dotsize, -dmre, -eci
+ -  Implemented ECI logic
  2019-09-01 2.6.5 HaO
- -	Framework 2.6.5 update
- -	Add option -gssep
+ -  Framework 2.6.5 update
+ -  Add option -gssep
  2019-09-18 2.6.6 HaO
- -	Framework 2.6.6 update
+ -  Framework 2.6.6 update
  2019-10-07 2.6.7 HaO
- -	Framework 2.6.7 update
+ -  Framework 2.6.7 update
  2019-12-05 2.7.0 HaO
- -	Framework 2.7.0 update
+ -  Framework 2.7.0 update
  -  Add symbology rmqr
  2020-02-01 2.7.1 HaO
- -	Framework 2.7.1 update
+ -  Framework 2.7.1 update
+ 2020-04-06 HaO
+ -  Added option -fullmultibyte
+ 2020-04-07 2.8.0 HaO
+ - Added symbology "UltraCode".
+ 2020-05-19 HaO
+ - Added option -separator to specify stacked symbology separator width
+ - -cols maximum changed from 66 to 67
+ 2020-07-27 2.9.0 HaO
+ - added option "-addongap"
+ - Renamed symbology names:
+    - Matrix2of5 -> Standard2of5
+    - PDF417Trunc -> PDF417Compact
+    - RSS14Stacked -> GS1DataBarStacked
+    - RSS14Stacked -> GS1DataBarStacked
+    - RSS14StackedOmni -> GS1DataBarSstackedOmni
+    - RSS14ExpandedStacked -> GS1DataBarExpandedStacked
+    - OneCode -> USPSIntelligentMail
+    - EAN128-CC -> GS1-128-CC
+    - RSS14-CC -> GS1DataBarOmni-CC
+    - RSSLimited-CC -> GS1DataBarLimited-CC
+    - RSSExpandedStacked-CC -> GS1DataBarExpanded-CC
+    - RSSEXPanded-CC -> GS1DataBarExpanded-CC
+    - RSS14Stacked-CC -> GS1DataBarStacked-CC
+    - RSS14Omni-CC -> GS1DataBarStackedOmni-CC
+    - RSSExpandedStacked-CC -> GS1DataBarExpandedStacked-CC
+    *** Potential incompatibility ***
+2020-08-04 2.10.0 HaO
+- added symbology "DPDCode"
+- Alpha channel support added:
+    - added option -nobackground
+    - also allow RRGGBBAA for -fg and -bg options
+2021-01-05 2.9.1 HaO
+- Added options -reverse, -werror, -wzpl
+- Use version number from zint.h (first 3 digits). Do not use an own one.
+2021-01-14 GL
+- Removed TCL native encoding of ECI's and replace by zint buildin mechanism.
+  The input is now UTF-8 for any ECI and zint cares about the encoding.
+2021-01-14 HaO
+- Added detection of presence of the Tk package and late initialization.
+  This is a preparation to add a TCL only mode to the DLL.
+2021-01-22 GL
+- -cols maximum changed from 67 to 108 (DotCode)
+2021-05-10 GL
+- Added -gs1parens option
+2021-05-22 GL
+- Added -vwhitesp option
+2021-05-28 GL
+- -cols maximum changed from 108 to 200 (DotCode)
 */
 
 #if defined(__WIN32__) || defined(_WIN32) || defined(WIN32)
@@ -87,6 +135,8 @@
 #endif
 
 #include <zint.h>
+/* Load version defines */
+#include <zintconfig.h>
 #include <string.h>
 
 #if defined(__WIN32__) || defined(_WIN32) || defined(WIN32)
@@ -106,14 +156,16 @@
 
 
 /*----------------------------------------------------------------------------*/
-/* > File option defines */
-
-#define VERSION "2.7.1"
-
-/*----------------------------------------------------------------------------*/
 /* >>>>> Hepler defines */
 
-#define STRING( x ) #x
+/* Two macros are necessary to not include the define name, but the value */
+#define STRING(x) #x
+#define TOSTRING(x) STRING(x)
+
+/* Define VERSION as the first 3 digits of the zint library version number */
+#define VERSION TOSTRING( ZINT_VERSION_MAJOR ) \
+        "." TOSTRING( ZINT_VERSION_MINOR ) \
+        "." TOSTRING( ZINT_VERSION_RELEASE )
 
 /*----------------------------------------------------------------------------*/
 /* >>>> External Prototypes (exports) */
@@ -121,6 +173,8 @@ EXPORT int Zint_Init (Tcl_Interp *interp);
 EXPORT int Zint_Unload (Tcl_Interp *Interp, int Flags);
 /*----------------------------------------------------------------------------*/
 /* >>>> local prototypes */
+static void InterpCleanupProc(ClientData clientData, Tcl_Interp *interp);
+static int CheckForTk(Tcl_Interp *interp, int *tkFlagPtr);
 static int Zint(ClientData unused, Tcl_Interp *interp, int objc,
     Tcl_Obj *CONST objv[]);
 static int Encode(Tcl_Interp *interp, int objc,
@@ -132,7 +186,7 @@ static int Encode(Tcl_Interp *interp, int objc,
 
 static char *s_code_list[] = {
     "Code11",
-    "Matrix2of5",
+    "Standard2of5",
     "Interleaved2of5",
     "IATAC2of5",
     "Logic2of5",
@@ -140,7 +194,7 @@ static char *s_code_list[] = {
     "Code39",
     "Code39Extended",
     "EAN",
-	"EAN+Check",
+    "EAN+Check",
     "GS1-128",
     "Codabar",
     "Code128",
@@ -155,10 +209,10 @@ static char *s_code_list[] = {
     "GS1DataBarExpanded",
     "Telepen",
     "UPC-A",
-	"UPC-A+Check",
+    "UPC-A+Check",
     "UPC-E",
     "UPC-E+Check",
-    "Postnet",
+    "POSTNET",
     "MSIPlessey",
     "FIM",
     "Logmars",
@@ -166,7 +220,7 @@ static char *s_code_list[] = {
     "PZN",
     "PharmaTwo",
     "PDF417",
-    "PDF417Truncated",
+    "PDF417Compact",
     "MaxiCode",
     "QR",
     "Code128B",
@@ -178,17 +232,18 @@ static char *s_code_list[] = {
     "RM4SCC",
     "Datamatrix",
     "EAN14",
-	"VIN",
+    "VIN",
     "CodablockF",
     "NVE18",
     "JapanPost",
     "KoreaPost",
-    "RSS14Stacked",
-    "RSS14SstackedOmni",
-    "RSSExpandedStacked",
-    "Planet",
+    "GS1DataBarStacked",
+    "GS1DataBarSstackedOmni",
+    "GS1DataBarExpandedStacked",
+    "PLANET",
+    "DPDCode",
     "MicroPDF417",
-    "OneCode",
+    "USPSIntelligentMail",
     "Plessey",
     "TelepenNum",
     "ITF14",
@@ -204,31 +259,32 @@ static char *s_code_list[] = {
     "HIBC-MicroPDF",
     "HIBC-CodablockF",
     "HIBCAztec",
-	"DotCode",
-	"HanXin",
-	"MailMark",
+    "DotCode",
+    "HanXin",
+    "MailMark",
     "AztecRunes",
     "Code32",
     "EAN-CC",
-    "EAN128-CC",
-    "RSS14-CC",
-    "RSSLimited-CC",
-    "RSSEXPanded-CC",
+    "GS1-128-CC",
+    "GS1DataBarOmni-CC",
+    "GS1DataBarLimited-CC",
+    "GS1DataBarExpanded-CC",
     "UPCA-CC",
     "UPCE-CC",
-    "RSS14Stacked-CC",
-    "RSS14Omni-CC",
-    "RSSExpandedStacked-CC",
+    "GS1DataBarStacked-CC",
+    "GS1DataBarStackedOmni-CC",
+    "GS1DataBarExpandedStacked-CC",
     "Channel",
     "CodeOne",
     "GridMatrix",
     "UPNQR",
+    "UltraCode",
     "rMQR",
     NULL};
 
 static int s_code_number[] = {
     BARCODE_CODE11,
-    BARCODE_C25MATRIX,
+    BARCODE_C25STANDARD,
     BARCODE_C25INTER,
     BARCODE_C25IATA,
     BARCODE_C25LOGIC,
@@ -236,8 +292,8 @@ static int s_code_number[] = {
     BARCODE_CODE39,
     BARCODE_EXCODE39,
     BARCODE_EANX,
-	BARCODE_EANX_CHK,
-    BARCODE_EAN128,
+    BARCODE_EANX_CHK,
+    BARCODE_GS1_128,
     BARCODE_CODABAR,
     BARCODE_CODE128,
     BARCODE_DPLEIT,
@@ -246,12 +302,12 @@ static int s_code_number[] = {
     BARCODE_CODE49,
     BARCODE_CODE93,
     BARCODE_FLAT,
-    BARCODE_RSS14,
-    BARCODE_RSS_LTD,
-    BARCODE_RSS_EXP,
+    BARCODE_DBAR_OMN,
+    BARCODE_DBAR_LTD,
+    BARCODE_DBAR_EXP,
     BARCODE_TELEPEN,
     BARCODE_UPCA,
-	BARCODE_UPCA_CHK,
+    BARCODE_UPCA_CHK,
     BARCODE_UPCE,
     BARCODE_UPCE_CHK,
     BARCODE_POSTNET,
@@ -262,7 +318,7 @@ static int s_code_number[] = {
     BARCODE_PZN,
     BARCODE_PHARMA_TWO,
     BARCODE_PDF417,
-    BARCODE_PDF417TRUNC,
+    BARCODE_PDF417COMP,
     BARCODE_MAXICODE,
     BARCODE_QRCODE,
     BARCODE_CODE128B,
@@ -274,17 +330,18 @@ static int s_code_number[] = {
     BARCODE_RM4SCC,
     BARCODE_DATAMATRIX,
     BARCODE_EAN14,
-	BARCODE_VIN,
+    BARCODE_VIN,
     BARCODE_CODABLOCKF,
     BARCODE_NVE18,
     BARCODE_JAPANPOST,
     BARCODE_KOREAPOST,
-    BARCODE_RSS14STACK,
-    BARCODE_RSS14STACK_OMNI,
-    BARCODE_RSS_EXPSTACK,
+    BARCODE_DBAR_STK,
+    BARCODE_DBAR_OMNSTK,
+    BARCODE_DBAR_EXPSTK,
     BARCODE_PLANET,
+    BARCODE_DPD,
     BARCODE_MICROPDF417,
-    BARCODE_ONECODE,
+    BARCODE_USPS_IMAIL,
     BARCODE_PLESSEY,
     BARCODE_TELEPEN_NUM,
     BARCODE_ITF14,
@@ -300,25 +357,26 @@ static int s_code_number[] = {
     BARCODE_HIBC_MICPDF,
     BARCODE_HIBC_BLOCKF,
     BARCODE_HIBC_AZTEC,
-	BARCODE_DOTCODE,
-	BARCODE_HANXIN,
-	BARCODE_MAILMARK,
+    BARCODE_DOTCODE,
+    BARCODE_HANXIN,
+    BARCODE_MAILMARK,
     BARCODE_AZRUNE,
     BARCODE_CODE32,
     BARCODE_EANX_CC,
-    BARCODE_EAN128_CC,
-    BARCODE_RSS14_CC,
-    BARCODE_RSS_LTD_CC,
-    BARCODE_RSS_EXP_CC,
+    BARCODE_GS1_128_CC,
+    BARCODE_DBAR_OMN_CC,
+    BARCODE_DBAR_LTD_CC,
+    BARCODE_DBAR_EXP_CC,
     BARCODE_UPCA_CC,
     BARCODE_UPCE_CC,
-    BARCODE_RSS14STACK_CC,
-    BARCODE_RSS14_OMNI_CC,
-    BARCODE_RSS_EXPSTACK_CC,
+    BARCODE_DBAR_STK_CC,
+    BARCODE_DBAR_OMNSTK_CC,
+    BARCODE_DBAR_EXPSTK_CC,
     BARCODE_CHANNEL,
     BARCODE_CODEONE,
     BARCODE_GRIDMATRIX,
     BARCODE_UPNQR,
+    BARCODE_ULTRA,
     BARCODE_RMQR,
     0};
 
@@ -342,32 +400,23 @@ static char *s_eci_list[] = {
     "iso8859-14",   /*16: ISO-8859-14 - Latin alphabet No. 8 (Celtic)*/
     "iso8859-15",   /*17: ISO-8859-15 - Latin alphabet No. 9*/
     "iso8859-16",   /*18: ISO-8859-16 - Latin alphabet No. 10*/
-    "jis0208",      /*20: ** Shift-JIS (JISX 0208 amd JISX 0201)*/
+    "jis0208",      /*20: Shift JIS (JIS X 0208 and JIS X 0201)*/
     "cp1250",       /*21: Windows-1250*/
     "cp1251",       /*22: Windows-1251*/
     "cp1252",       /*23: Windows-1252*/
     "cp1256",       /*24: Windows-1256*/
-    "unicode",      /*25: ** UCS-2 Unicode (High order byte first)*/
+    "unicode",      /*25: UCS-2BE (High order byte first) Unicode BMP*/
     "utf-8",        /*26: Unicode (UTF-8)*/
     "ascii",        /*27: ISO-646:1991 7-bit character set*/
-    "big5",         /*28: ** Big-5 (Taiwan) Chinese Character Set*/
-    "euc-cn",       /*29: ** GB (PRC) Chinese Character Set*/
-    "iso2022-kr",   /*30: ** Korean Character Set (KSX1001:1998)*/
-	NULL
+    "big5",         /*28: Big5 (Taiwan) Chinese Character Set*/
+    "euc-cn",       /*29: GB (PRC) Chinese Character Set*/
+    "iso2022-kr",   /*30: Korean Character Set EUC-KR (KS X 1001:2002)*/
+    NULL
 };
 
 /* The ECI numerical number to pass to ZINT */
 static int s_eci_number[] = {
     3,4,5,6,7,8,9,10,11,12,13,15,16,17,18,20,21,22,23,24,25,26,27,28,29,30
-};
-
-/* Flag if an encoding is delivered as unicode. If not, native encoding is
- * required.
- * Those encodings are marked with "**" in the upper comments.
- */
-static int s_eci_unicode_input[] = {
-    /* 3,4,5,6,7,8,9,10,11,12,13,15,16,17,18,20,21,22,23,24,25,26,27,28,29,30 */
-       1,1,1,1,1,1,1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 0, 0
 };
 
 
@@ -377,45 +426,69 @@ static char version_string[] = VERSION;
 static char help_message[] = "zint tcl(stub,obj) dll\n"
     " Generate barcode in tk images\n"
     "Usage:\n"
-    " zint encode data photo option value...\n"
+    " zint encode data photo ?option value? ...\n"
     "  data: data to encode in the symbol\n"
     "  photo: a tcl photo image handle ('p' after 'image create photo p')\n"
     "  Available options:\n"
     "   -barcode choice: symbology, use 'zint symbology' to get a list\n"
+    "   -addongap number: (7..12, default: 9) set add-on gap in multiple of module size (UPC/EAN-CC)\n"
+    "   -bg color: set background color as 6 or 8 hex rrggbbaa\n"
+    /* cli option --binary internally handled */
     "   -bind bool: bars above/below the code, size set by -border\n"
+    "   -bold bool: use bold text\n"
     "   -border integer: width of a border around the symbol. Use with -bind/-box 1\n"
     "   -box bool: box around bar code, size set be -border\n"
-    "   -height integer: Symbol height in modules\n"
-    "   -whitesp integer: horizontal quiet zone in modules\n"
-    "   -fg color: set foreground color as 6 hex rrggbb\n"
-    "   -bg color: set background color as 6 hex rrggbb\n"
-    "   -cols integer: PDF417, Codablock F: number of columns\n"
-    "   -rows integer: Codablock F: number of rows\n"
-    "   -vers integer: Symbology option, QR-Code, Plessy\n"
+    /* cli option --cmyk not supported as no corresponding output */
+    "   -cols integer: PDF417, Codablock F, DotCode: number of columns\n"
+    /* cli option --data is standard parameter */
     "   -dmre bool: Allow Data Matrix Rectangular Extended\n"
-    "   -rotate angle: Image rotation by 0,90 or 270 degrees\n"
-    "   -secure integer: EC Level (PDF417, QR)\n"
-    "   -mode: Structured primary data mode (Maxicode, Composite)\n"
-    "   -primary text: Structured primary data (Maxicode, Composite)\n"
-    "   -dotty bool: use dots instead of boxes for matrix codes\n"
     "   -dotsize number: radius ratio of dots from 0.01 to 1.0\n" 
-    "   -scale double: Scale the image to this factor\n"
-    "   -format binary|unicode|gs1: input data format. Default:unicode\n"
-	"   -gssep bool: for gs1, use gs as separator instead fnc1 (Datamatrix only)\n"
+    "   -dotty bool: use dots instead of boxes for matrix codes\n"
+    /* cli option --dump not supported */
+    /* cli option --ecinos not supported */
     "   -eci number: ECI to use\n"
-    "   -notext bool: no interpretation line\n"
-    "   -square bool: force Data Matrix symbols to be square\n"
+    /* cli option --esc not supported */
+    "   -fg color: set foreground color as 6 or 8 hex rrggbbaa\n"
+    /* replaces cli options --binary and --gs1 */
+    "   -format binary|unicode|gs1: input data format. Default:unicode\n"
+    "   -fullmultibyte bool: allow multibyte compaction for xQR, HanXin, Gridmatrix\n"
+    /* cli option --gs1 replaced by -format */
+    "   -gs1parens bool: for gs1, AIs enclosed in parentheses instead of square brackets\n"
+    "   -gssep bool: for gs1, use gs as separator instead fnc1 (Datamatrix only)\n"
+    "   -height integer: Symbol height in modules\n"
+    /* cli option --input not supported */
     "   -init bool: Create reader initialisation symbol (Code 128, Data Matrix)\n"
+    "   -mask number: set masking pattern to use (QR/MicroQR/HanXin/DotCode)\n"
+    /* cli option --mirror not supported */
+    "   -mode number: set encoding mode (MaxiCode, Composite)\n"
+    "   -nobackground bool: set background transparent\n"
+    "   -notext bool: no interpretation line\n"
+    /* cli option --output not supported */
+    "   -primary text: Structured primary data (MaxiCode, Composite)\n"
+    "   -reverse bool: Reverse colours (white on black)\n"
+    "   -rotate angle: Image rotation by 0,90 or 270 degrees\n"
+    "   -rows integer: Codablock F: number of rows\n"
+    "   -scale double: Scale the image to this factor\n"
+    "   -scmvv number: Prefix SCM with [)>\\R01\\Gvv (vv is NUMBER) (MaxiCode)\n"
+    "   -secure integer: EC Level (PDF417, QR)\n"
+    "   -separator 0..4 (default: 1) : Stacked symbologies: separator width\n"
+    /* cli option --small replaced by -smalltext */
     "   -smalltext bool: tiny interpretation line font\n"
-    "   -bold bool: use bold text\n"
+    "   -square bool: force Data Matrix symbols to be square\n"
+    /* cli option --types not supported */
+    "   -vers integer: Symbology option\n"
+    "   -vwhitesp integer: vertical quiet zone in modules\n"
+    "   -whitesp integer: horizontal quiet zone in modules\n"
+    "   -werror bool: Convert all warnings into errors\n"
+    "   -wzpl bool: ZPL compatibility mode (allows non-standard symbols)\n"
     "   -to {x0 y0 ?width? ?height?}: place to put in photo image\n"
     "\n"
     "zint symbologies: List available symbologies\n"
     "zint eci: List available eci tables\n"
-    " zint help\n"
-    " zint version\n"
+    "zint help\n"
+    "zint version\n"
     ;
-
+    
 /*----------------------------------------------------------------------------*/
 /* Exported symbols */
 #if defined(__WIN32__) || defined(_WIN32) || defined(WIN32)
@@ -430,44 +503,52 @@ EXPORT BOOL WINAPI DllEntryPoint (HINSTANCE hInstance,
 /* Initialisation Procedures */
 EXPORT int Zint_Init (Tcl_Interp *interp)
 {
+    int * tkFlagPtr;
     /*------------------------------------------------------------------------*/
 #ifdef USE_TCL_STUBS
-    if (Tcl_InitStubs(interp, "8.1", 0) == NULL)
+    if (Tcl_InitStubs(interp, "8.5", 0) == NULL)
 #else
-    if (Tcl_PkgRequire(interp, "Tcl", "8.1", 0) == NULL)
+    if (Tcl_PkgRequire(interp, "Tcl", "8.5", 0) == NULL)
 #endif
     {
         return TCL_ERROR;
     }
     /*------------------------------------------------------------------------*/
-#ifdef USE_TK_STUBS
-    if (Tk_InitStubs(interp, "8.1", 0) == NULL)
-#else
-    if (Tcl_PkgRequire(interp, "Tk", "8.1", 0) == NULL)
-#endif
-    {
-        return TCL_ERROR;
-    }
+    /* This procedure is called once per thread and any thread local data     */
+    /* should be allocated and initialized here (and not in static variables) */
+    
+    /* Create a flag if Tk is loaded */
+    tkFlagPtr = (int *)ckalloc(sizeof(int));
+    *tkFlagPtr = 0;
+    Tcl_CallWhenDeleted(interp, InterpCleanupProc, (ClientData)tkFlagPtr);
     /*------------------------------------------------------------------------*/
-    Tcl_CreateObjCommand(interp, "zint", Zint, (ClientData)NULL,
-        (Tcl_CmdDeleteProc *)NULL);
+    Tcl_CreateObjCommand(interp, "zint", Zint, (ClientData)tkFlagPtr,
+            (Tcl_CmdDeleteProc *)NULL);
     Tcl_PkgProvide (interp, "zint", version_string);
     /*------------------------------------------------------------------------*/
     return TCL_OK;
 }
-//------------------------------------------------------------------------------
-// >>>> Unload Procedures
-//------------------------------------------------------------------------------
+/*----------------------------------------------------------------------------*/
+/* >>>> Cleanup procedure */
+/*----------------------------------------------------------------------------*/
+/* This routine is called, if a thread is terminated */
+static void InterpCleanupProc(ClientData clientData, Tcl_Interp *interp)
+{
+    ckfree( (char *)clientData );
+}
+/*----------------------------------------------------------------------------*/
+/* >>>> Unload Procedures */
+/*----------------------------------------------------------------------------*/
 EXPORT int Zint_Unload (Tcl_Interp *Interp, int Flags)
 {
-	// Allow unload
-	return TCL_OK;
+    // Allow unload
+    return TCL_OK;
 }
 /*----------------------------------------------------------------------------*/
 /* >>>>> Called routine */
 /*----------------------------------------------------------------------------*/
 /* Decode tcl commands */
-static int Zint(ClientData unused, Tcl_Interp *interp, int objc,
+static int Zint(ClientData tkFlagPtr, Tcl_Interp *interp, int objc,
     Tcl_Obj *CONST objv[])
 {
     /* Option list and indexes */
@@ -495,6 +576,9 @@ static int Zint(ClientData unused, Tcl_Interp *interp, int objc,
     switch (Index)
     {
     case iEncode:
+        if (CheckForTk(interp, (int *)tkFlagPtr) != TCL_OK) {
+            return TCL_ERROR;
+        }
         return Encode(interp, objc, objv);
     case iSymbologies:
         {
@@ -539,14 +623,38 @@ static int Zint(ClientData unused, Tcl_Interp *interp, int objc,
         return TCL_OK;
     }
 }
-/*----------------------------------------------------------------------------*/
+/*----------------------------------------------------------------------
+ * Check availability of Tk.
+ *----------------------------------------------------------------------
+ */
+static int CheckForTk(Tcl_Interp *interp, int *tkFlagPtr)
+{
+    if (*tkFlagPtr > 0) {
+        return TCL_OK;
+    }
+    if (*tkFlagPtr == 0) {
+        if ( ! Tcl_PkgPresent(interp, "Tk", "8.5", 0) ) {
+            Tcl_SetResult(interp, "package Tk not loaded", TCL_STATIC);
+            return TCL_ERROR;
+        }
+    }
+#ifdef USE_TK_STUBS
+    if (*tkFlagPtr < 0 || Tk_InitStubs(interp, "8.5", 0) == NULL) {
+        *tkFlagPtr = -1;
+        Tcl_SetResult(interp, "error initializing Tk", TCL_STATIC);
+        return TCL_ERROR;
+    }
+#endif
+    *tkFlagPtr = 1;
+    return TCL_OK;
+}/*----------------------------------------------------------------------------*/
 /* >>>>> Encode */
 /*----------------------------------------------------------------------------*/
 /* Encode image */
 static int Encode(Tcl_Interp *interp, int objc,
     Tcl_Obj *CONST objv[])
 {
-    struct zint_symbol *hSymbol;
+    struct zint_symbol *my_symbol;
     Tcl_DString dsInput;
     char *pStr = NULL;
     int lStr;
@@ -560,6 +668,11 @@ static int Encode(Tcl_Interp *interp, int objc,
     int destWidth = 0;
     int destHeight = 0;
     int ECIIndex = 0;
+    int fFullMultiByte = 0;
+    int addon_gap = 0;
+    int Separator = 1;
+    int Mask = 0;
+    unsigned int cap;
     /*------------------------------------------------------------------------*/
     /* >> Check if at least data and object is given and a pair number of */
     /* >> options */
@@ -576,26 +689,29 @@ static int Encode(Tcl_Interp *interp, int objc,
     }
     /*------------------------------------------------------------------------*/
     /* >>> Prepare zint object */
-    hSymbol = ZBarcode_Create();
-    hSymbol->input_mode = UNICODE_MODE;
-    hSymbol->option_3 = 0;
+    my_symbol = ZBarcode_Create();
+    my_symbol->input_mode = UNICODE_MODE;
+    my_symbol->option_3 = 0;
     /*------------------------------------------------------------------------*/
     /* >> Decode options */
     for (optionPos = 4; optionPos < objc; optionPos+=2) {
         /*--------------------------------------------------------------------*/
         /* Option list and indexes */
         char *optionList[] = {
-            "-barcode", "-bg", "-bind", "-bold", "-border", "-box", "-cols",
-            "-dmre", "-dotsize", "-dotty", "-eci", "-fg", "-format", "-gssep",
-			"-height", "-init", "-mode", "-notext", "-primary", "-rotate",
-			"-rows", "-scale", "-secure", "-smalltext", "-square", "-to",
-			"-vers", "-whitesp", NULL};
+            "-addongap", "-barcode", "-bg", "-bind", "-bold", "-border", "-box",
+            "-cols", "-dmre", "-dotsize", "-dotty", "-eci", "-fg", "-format",
+            "-fullmultibyte", "-gs1parens", "-gssep", "-height", "-init", "-mask", "-mode",
+            "-nobackground", "-notext", "-primary", "-reverse", "-rotate",
+            "-rows", "-scale", "-scmvv", "-secure", "-separator", "-smalltext",
+            "-square", "-to", "-vers", "-vwhitesp", "-werror", "-whitesp", "-wzpl",
+            NULL};
         enum iOption {
-            iBarcode, iBG, iBind, iBold, iBorder, iBox, iCols,
-            iDMRE, iDotSize, iDotty, iECI, iFG, iFormat, iGSSep, iHeight,
-            iInit, iMode, iNoText, iPrimary, iRotate, iRows,
-            iScale, iSecure, iSmallText, iSquare, iTo, iVers,
-            iWhiteSp
+            iAddonGap, iBarcode, iBG, iBind, iBold, iBorder, iBox,
+            iCols, iDMRE, iDotSize, iDotty, iECI, iFG, iFormat,
+            iFullMultiByte, iGS1Parens, iGSSep, iHeight, iInit, iMask, iMode,
+            iNoBackground, iNoText, iPrimary, iReverse, iRotate,
+            iRows, iScale, iSCMvv, iSecure, iSeparator, iSmallText,
+            iSquare, iTo, iVers, iVWhiteSp, iWError, iWhiteSp, iWZPL
             };
         int optionIndex;
         int intValue;
@@ -617,11 +733,17 @@ static int Encode(Tcl_Interp *interp, int objc,
         case iBox:
         case iDMRE:
         case iDotty:
-		case iGSSep:
+        case iGS1Parens:
+        case iGSSep:
         case iInit:
+        case iNoBackground:
         case iNoText:
         case iSmallText:
         case iSquare:
+        case iFullMultiByte:
+        case iReverse:
+        case iWError:
+        case iWZPL:
             /* >> Binary options */
             if (TCL_OK != Tcl_GetBooleanFromObj(interp, objv[optionPos+1],
                     &intValue))
@@ -633,9 +755,9 @@ static int Encode(Tcl_Interp *interp, int objc,
         case iBG:
             /* >> Colors */
             pStr = Tcl_GetStringFromObj(objv[optionPos+1],&lStr);
-            if (lStr != 6) {
+            if (lStr != 6 && lStr != 8) {
                 Tcl_SetObjResult(interp,
-                    Tcl_NewStringObj("Color is not 6 hex",-1));
+                    Tcl_NewStringObj("Color is not 6 or 8 hex",-1));
                 fError = 1;
             }
             break;
@@ -648,14 +770,19 @@ static int Encode(Tcl_Interp *interp, int objc,
                 fError = 1;
             }
             break;
+        case iAddonGap:
         case iBorder:
         case iCols:
         case iHeight:
+        case iMask:
         case iMode:
         case iRotate:
         case iRows:
         case iSecure:
+        case iSeparator:
+        case iSCMvv:
         case iVers:
+        case iVWhiteSp:
         case iWhiteSp:
             /* >> Int */
             if (TCL_OK != Tcl_GetIntFromObj(interp, objv[optionPos+1],
@@ -682,25 +809,34 @@ static int Encode(Tcl_Interp *interp, int objc,
         }
         /*--------------------------------------------------------------------*/
         switch (optionIndex) {
+        case iAddonGap:
+            if (intValue < 7 || intValue > 12) {
+                Tcl_SetObjResult(interp,
+                    Tcl_NewStringObj("Invalid add-on gap value not within 7 to 12", -1));
+                fError = 1;
+            } else {
+                addon_gap = intValue;
+            }
+            break;
         case iBind:
             if (intValue) {
-                hSymbol->output_options |= BARCODE_BIND;
+                my_symbol->output_options |= BARCODE_BIND;
             } else {
-                hSymbol->output_options &= ~BARCODE_BIND;
+                my_symbol->output_options &= ~BARCODE_BIND;
             }
             break;
         case iBold:
             if (intValue) {
-                hSymbol->output_options |= BOLD_TEXT;
+                my_symbol->output_options |= BOLD_TEXT;
             } else {
-                hSymbol->output_options &= ~BOLD_TEXT;
+                my_symbol->output_options &= ~BOLD_TEXT;
             }
             break;
         case iBox:
             if (intValue) {
-                hSymbol->output_options |= BARCODE_BOX;
+                my_symbol->output_options |= BARCODE_BOX;
             } else {
-                hSymbol->output_options &= ~BARCODE_BOX;
+                my_symbol->output_options &= ~BARCODE_BOX;
             }
             break;
         case iDotSize:
@@ -709,22 +845,32 @@ static int Encode(Tcl_Interp *interp, int objc,
                     Tcl_NewStringObj("Dot size below 0.01", -1));
                 fError = 1;
             } else {
-                hSymbol->dot_size = (float)doubleValue;
+                my_symbol->dot_size = (float)doubleValue;
             }
             break;
         case iDotty:
             if (intValue) {
-                hSymbol->output_options |= BARCODE_DOTTY_MODE;
+                my_symbol->output_options |= BARCODE_DOTTY_MODE;
             } else {
-                hSymbol->output_options &= ~BARCODE_DOTTY_MODE;
+                my_symbol->output_options &= ~BARCODE_DOTTY_MODE;
+            }
+            break;
+        case iGS1Parens:
+            if (intValue) {
+                my_symbol->input_mode |= GS1PARENS_MODE;
+            } else {
+                my_symbol->input_mode &= ~GS1PARENS_MODE;
             }
             break;
         case iGSSep:
             if (intValue) {
-                hSymbol->output_options |= GS1_GS_SEPARATOR;
+                my_symbol->output_options |= GS1_GS_SEPARATOR;
             } else {
-                hSymbol->output_options &= ~GS1_GS_SEPARATOR;
+                my_symbol->output_options &= ~GS1_GS_SEPARATOR;
             }
+            break;
+        case iFullMultiByte:
+            fFullMultiByte = intValue;
             break;
         case iECI:
             if(Tcl_GetIndexFromObj(interp, objv[optionPos+1],
@@ -733,43 +879,64 @@ static int Encode(Tcl_Interp *interp, int objc,
             {
                 fError = 1;
             } else {
-                hSymbol->eci = s_eci_number[ECIIndex];
+                my_symbol->eci = s_eci_number[ECIIndex];
             }
             break;
         case iInit:
             if (intValue) {
-                hSymbol->output_options |= READER_INIT;
+                my_symbol->output_options |= READER_INIT;
             } else {
-                hSymbol->output_options &= ~READER_INIT;
+                my_symbol->output_options &= ~READER_INIT;
             }
             break;
         case iSmallText:
             if (intValue) {
-                hSymbol->output_options |= SMALL_TEXT;
+                my_symbol->output_options |= SMALL_TEXT;
             } else {
-                hSymbol->output_options &= ~SMALL_TEXT;
+                my_symbol->output_options &= ~SMALL_TEXT;
+            }
+            break;
+        case iReverse:
+            if (intValue) {
+                strcpy(my_symbol->fgcolour, "ffffff");
+                strcpy(my_symbol->bgcolour, "000000");
+            }
+            break;
+        case iWError:
+            if (intValue) {
+                my_symbol->warn_level = WARN_FAIL_ALL;
+            }
+            break;
+        case iWZPL:
+            if (intValue) {
+                my_symbol->warn_level = WARN_ZPL_COMPAT;
             }
             break;
         case iFG:
-            strncpy(hSymbol->fgcolour, pStr, 6);
-            hSymbol->fgcolour[6]='\0';
+            strncpy(my_symbol->fgcolour, pStr, lStr);
+            my_symbol->fgcolour[lStr]='\0';
             break;
         case iBG:
-            strncpy(hSymbol->bgcolour, pStr, 6);
-            hSymbol->bgcolour[6]='\0';
+            strncpy(my_symbol->bgcolour, pStr, lStr);
+            my_symbol->bgcolour[lStr]='\0';
+            break;
+        case iNoBackground:
+            if (intValue) {
+                strcpy(my_symbol->bgcolour, "ffffff00");
+            }
             break;
         case iNoText:
-            hSymbol->show_hrt = (intValue?0:1);
+            my_symbol->show_hrt = (intValue?0:1);
             break;
         case iSquare:
             /* DM_SQUARE overwrites DM_DMRE */
             if (intValue)
-                hSymbol->option_3 = DM_SQUARE;
+                my_symbol->option_3 = DM_SQUARE;
             break;
         case iDMRE:
             /* DM_DMRE overwrites DM_SQUARE */
             if (intValue)
-                hSymbol->option_3 = DM_DMRE;
+                my_symbol->option_3 = DM_DMRE;
             break;
         case iScale:
             if (doubleValue < 0.01) {
@@ -777,7 +944,7 @@ static int Encode(Tcl_Interp *interp, int objc,
                     Tcl_NewStringObj("Scale below 0.01", -1));
                 fError = 1;
             } else {
-                hSymbol->scale = (float)doubleValue;
+                my_symbol->scale = (float)doubleValue;
             }
             break;
         case iBorder:
@@ -786,7 +953,7 @@ static int Encode(Tcl_Interp *interp, int objc,
                     Tcl_NewStringObj("Border out of range", -1));
                 fError = 1;
             } else {
-                hSymbol->border_width = intValue;
+                my_symbol->border_width = intValue;
             }
             break;
         case iHeight:
@@ -795,21 +962,48 @@ static int Encode(Tcl_Interp *interp, int objc,
                     Tcl_NewStringObj("Height out of range", -1));
                 fError = 1;
             } else {
-                hSymbol->height = intValue;
+                my_symbol->height = intValue;
+            }
+            break;
+        case iSeparator:
+            if (intValue < 0 || intValue > 4) {
+                Tcl_SetObjResult(interp,
+                    Tcl_NewStringObj("Separator out of range", -1));
+                fError = 1;
+            } else {
+                Separator = intValue;
+            }
+            break;
+        case iMask:
+            if (intValue < 0 || intValue > 7) {
+                Tcl_SetObjResult(interp,
+                    Tcl_NewStringObj("Mask out of range", -1));
+                fError = 1;
+            } else {
+                Mask = intValue + 1;
+            }
+            break;
+        case iSCMvv:
+            if (intValue < 0 || intValue > 99) {
+                Tcl_SetObjResult(interp,
+                    Tcl_NewStringObj("SCM version out of range", -1));
+                fError = 1;
+            } else {
+                my_symbol->option_2 = intValue + 1;
             }
             break;
         case iCols:
         case iVers:
             /* >> Int in Option 2 */
             if (intValue < 1
-                || (optionIndex==iCols && intValue > 66)
+                || (optionIndex==iCols && intValue > 200)
                 || (optionIndex==iVers && intValue > 47))
             {
                 Tcl_SetObjResult(interp,
                     Tcl_NewStringObj("cols/vers out of range", -1));
                 fError = 1;
             } else {
-                hSymbol->option_2 = intValue;
+                my_symbol->option_2 = intValue;
             }
             break;
         case iSecure:
@@ -824,11 +1018,11 @@ static int Encode(Tcl_Interp *interp, int objc,
                     Tcl_NewStringObj("secure/mode/rows out of range", -1));
                 fError = 1;
             } else {
-                hSymbol->option_1 = intValue;
+                my_symbol->option_1 = intValue;
             }
             break;
         case iPrimary:
-            strcpy(hSymbol->primary, Tcl_DStringValue( &dString ) );
+            strcpy(my_symbol->primary, Tcl_DStringValue( &dString ) );
             Tcl_DStringFree(&dString);
             break;
         case iRotate:
@@ -861,11 +1055,14 @@ static int Encode(Tcl_Interp *interp, int objc,
             {
                 fError = 1;
             } else {
-                hSymbol->symbology = s_code_number[intValue];
+                my_symbol->symbology = s_code_number[intValue];
             }
             break;
+        case iVWhiteSp:
+            my_symbol->whitespace_height = intValue;
+            break;
         case iWhiteSp:
-            hSymbol->whitespace_width = intValue;
+            my_symbol->whitespace_width = intValue;
             break;
         case iTo:
             /* >> Decode the -to parameter as list of X0 Y0 ?Width Height? */
@@ -918,12 +1115,35 @@ static int Encode(Tcl_Interp *interp, int objc,
                     break;
                 }
                 switch (intValue) {
-                    case iBinary: hSymbol->input_mode = DATA_MODE; break;
-                    case iGS1: hSymbol->input_mode = GS1_MODE; break;
-                    default: hSymbol->input_mode = UNICODE_MODE; break;
+                    case iBinary: my_symbol->input_mode = DATA_MODE; break;
+                    case iGS1: my_symbol->input_mode = GS1_MODE; break;
+                    default: my_symbol->input_mode = UNICODE_MODE; break;
                 }
             }
         }
+    }
+    /*------------------------------------------------------------------------*/
+    /* >>> Get symbology capability mask */
+    cap = ZBarcode_Cap(my_symbol->symbology,
+            ZINT_CAP_STACKABLE | ZINT_CAP_EXTENDABLE | ZINT_CAP_FULL_MULTIBYTE
+            | ZINT_CAP_MASK);
+    /*------------------------------------------------------------------------*/
+    /* >>> option_3 is set by three values depending on the symbology */
+    /* On wrong symbology, the option is ignored(as does the zint program)*/
+	if (fFullMultiByte && (cap & ZINT_CAP_FULL_MULTIBYTE)) {
+		my_symbol->option_3 = ZINT_FULL_MULTIBYTE;
+	}
+	if (Mask && (cap & ZINT_CAP_MASK)) {
+		my_symbol->option_3 |= Mask << 8;
+	}
+    if (Separator && (cap & ZINT_CAP_STACKABLE)) {
+		my_symbol->option_3 = Separator;
+	}
+    /*------------------------------------------------------------------------*/
+    /* >>> option_2 is set by two values depending on the symbology */
+    /* On wrong symbology, the option is ignored(as does the zint program)*/
+    if (addon_gap && (cap & ZINT_CAP_EXTENDABLE)) {
+        my_symbol->option_2 = addon_gap;
     }
     /*------------------------------------------------------------------------*/
     /* >>> Prepare input dstring and encode it to ECI encoding*/
@@ -932,28 +1152,15 @@ static int Encode(Tcl_Interp *interp, int objc,
     if (!fError) {
         /*--------------------------------------------------------------------*/
         /* >>> Get input mode */
-        if (hSymbol->input_mode == DATA_MODE) {
+        if (my_symbol->input_mode == DATA_MODE) {
             /* Binary data */
             pStr = (char *) Tcl_GetByteArrayFromObj(objv[2], &lStr);
         } else {
-            /* UTF8 Data (or ECI encoding) */
-            if ( ! s_eci_unicode_input[ECIIndex]) {
-                /* For this ECI, the Data must be encoded in the ECI encoding */
-                Tcl_FreeEncoding(hZINTEncoding);
-                hZINTEncoding = Tcl_GetEncoding(interp, s_eci_list[ECIIndex]);
-                if (NULL == hZINTEncoding) {
-                    /* Interpreter has error message */
-                    fError = 1;
-                }
-                /* we must indicate binary data */
-                hSymbol->input_mode = DATA_MODE;
-            }
-            if (! fError ) {
-                pStr = Tcl_GetStringFromObj(objv[2], &lStr);
-                Tcl_UtfToExternalDString( hZINTEncoding, pStr, lStr, &dsInput);
-                pStr = Tcl_DStringValue( &dsInput );
-                lStr = Tcl_DStringLength( &dsInput );
-            }
+            /* UTF8 Data */
+			pStr = Tcl_GetStringFromObj(objv[2], &lStr);
+			Tcl_UtfToExternalDString( hZINTEncoding, pStr, lStr, &dsInput);
+			pStr = Tcl_DStringValue( &dsInput );
+			lStr = Tcl_DStringLength( &dsInput );
         }
     }
     /*------------------------------------------------------------------------*/
@@ -962,16 +1169,16 @@ static int Encode(Tcl_Interp *interp, int objc,
         int ErrorNumber;
         Tk_PhotoHandle hPhoto;
         /*--------------------------------------------------------------------*/
-		/* call zint graphic creation to buffer */
-        ErrorNumber = ZBarcode_Encode_and_Buffer(hSymbol,
+        /* call zint graphic creation to buffer */
+        ErrorNumber = ZBarcode_Encode_and_Buffer(my_symbol,
             (unsigned char *) pStr, lStr, rotate_angle);
         /*--------------------------------------------------------------------*/
         /* >> Show a message */
         if( 0 != ErrorNumber )
         {
-            Tcl_SetObjResult(interp, Tcl_NewStringObj(hSymbol->errtxt, -1));
+            Tcl_SetObjResult(interp, Tcl_NewStringObj(my_symbol->errtxt, -1));
         }        
-        if( 5 <= ErrorNumber )
+        if( ZINT_ERROR <= ErrorNumber )
         {
             /* >> Encode error */
             fError = 1;
@@ -983,20 +1190,42 @@ static int Encode(Tcl_Interp *interp, int objc,
             fError = 1;
         } else {
             Tk_PhotoImageBlock sImageBlock;
-            sImageBlock.pixelPtr = (unsigned char *) hSymbol->bitmap;
-            sImageBlock.width = hSymbol->bitmap_width;
-            sImageBlock.height = hSymbol->bitmap_height;
-            sImageBlock.pitch = 3*hSymbol->bitmap_width;
-            sImageBlock.pixelSize = 3;
-            sImageBlock.offset[0] = 0;
-            sImageBlock.offset[1] = 1;
-            sImageBlock.offset[2] = 2;
-            sImageBlock.offset[3] = 0;
+            char * pImageRGBA = NULL;
+            if (my_symbol->alphamap == NULL) {
+                sImageBlock.pixelPtr = (unsigned char *) my_symbol->bitmap;
+                sImageBlock.width = my_symbol->bitmap_width;
+                sImageBlock.height = my_symbol->bitmap_height;
+                sImageBlock.pitch = 3*my_symbol->bitmap_width;
+                sImageBlock.pixelSize = 3;
+                sImageBlock.offset[0] = 0;
+                sImageBlock.offset[1] = 1;
+                sImageBlock.offset[2] = 2;
+                sImageBlock.offset[3] = 0;
+            } else {
+                int index;
+                /* Alpha channel present - prepare the image data in rgba order */
+                pImageRGBA = ckalloc(my_symbol->bitmap_width*my_symbol->bitmap_height*4);
+                for (index = 0; index < my_symbol->bitmap_width*my_symbol->bitmap_height; index++) {
+                    pImageRGBA[index*4] = my_symbol->bitmap[index*3];
+                    pImageRGBA[index*4+1] = my_symbol->bitmap[index*3+1];
+                    pImageRGBA[index*4+2] = my_symbol->bitmap[index*3+2];
+                    pImageRGBA[index*4+3] = my_symbol->alphamap[index];
+                }
+                sImageBlock.pixelPtr = (unsigned char *) pImageRGBA;
+                sImageBlock.width = my_symbol->bitmap_width;
+                sImageBlock.height = my_symbol->bitmap_height;
+                sImageBlock.pitch = 4*my_symbol->bitmap_width;
+                sImageBlock.pixelSize = 4;
+                sImageBlock.offset[0] = 0;
+                sImageBlock.offset[1] = 1;
+                sImageBlock.offset[2] = 2;
+                sImageBlock.offset[3] = 3;
+            }
             if (0 == destWidth) {
-                destWidth = hSymbol->bitmap_width;
+                destWidth = my_symbol->bitmap_width;
             }
             if (0 == destHeight) {
-                destHeight = hSymbol->bitmap_height;
+                destHeight = my_symbol->bitmap_height;
             }
             if (TCL_OK != Tk_PhotoPutBlock(interp, hPhoto, &sImageBlock,
                 destX0, destY0, destWidth, destHeight,
@@ -1004,17 +1233,18 @@ static int Encode(Tcl_Interp *interp, int objc,
             {
                 fError = 1;
             }
+            if (pImageRGBA != NULL) {
+                ckfree(pImageRGBA);
+            }
         }
     }
     /*------------------------------------------------------------------------*/
     Tcl_FreeEncoding(hZINTEncoding);
     Tcl_DStringFree(& dsInput);
-    ZBarcode_Delete(hSymbol);
+    ZBarcode_Delete(my_symbol);
     /*------------------------------------------------------------------------*/
     if (fError) {
         return TCL_ERROR;
     }
     return TCL_OK;
 }
-
-

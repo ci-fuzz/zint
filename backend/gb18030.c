@@ -1,6 +1,6 @@
 /*
     libzint - the open source barcode library
-    Copyright (C) 2008-2019 Robin Stuart <rstuart114@gmail.com>
+    Copyright (C) 2019-2021 Robin Stuart <rstuart114@gmail.com>
 
     Redistribution and use in source and binary forms, with or without
     modification, are permitted provided that the following conditions
@@ -52,12 +52,13 @@
  * License along with the GNU LIBICONV Library; see the file COPYING.LIB.
  * If not, see <https://www.gnu.org/licenses/>.
  */
-#include <string.h>
+#ifdef _MSC_VER
+#include <malloc.h>
+#endif
 #include "common.h"
 #include "gb2312.h"
 #include "gb18030.h"
-
-INTERNAL int utf_to_eci(const int eci, const unsigned char source[], unsigned char dest[], size_t *length); /* Convert Unicode to other encodings */
+#include "eci.h"
 
 /*
  * CP936 extensions (libiconv-1.16/lib/cp936ext.h)
@@ -78,7 +79,7 @@ static const unsigned short cp936ext_pagefe[24] = {
   0xa6e5, 0xa6e8, 0xa6e9, 0xa6ea, 0xa6eb, 0x0000, 0x0000, 0x0000, /*0x40-0x47*/
 };
 
-static int cp936ext_wctomb(unsigned int* r, unsigned int wc) {
+static int cp936ext_wctomb(unsigned int *r, const unsigned int wc) {
     unsigned short c = 0;
     if (wc >= 0x0140 && wc < 0x0150) {
         c = cp936ext_page01[wc-0x0140];
@@ -2380,7 +2381,7 @@ static const Summary16 gbkext_inv_uni2indx_pagefe[31] = {
   { 14311, 0x0000 }, { 14311, 0x0000 }, { 14311, 0x0014 },
 };
 
-static int gbkext_inv_wctomb(unsigned int* r, unsigned int wc) {
+static int gbkext_inv_wctomb(unsigned int *r, const unsigned int wc) {
     const Summary16 *summary = NULL;
     if (wc >= 0x0200 && wc < 0x02e0) {
         summary = &gbkext_inv_uni2indx_page02[(wc>>4)-0x020];
@@ -2421,7 +2422,7 @@ static int gbkext_inv_wctomb(unsigned int* r, unsigned int wc) {
  * GBK (libiconv-1.16/lib/gbk.h)
  */
 
-static int gbk_wctomb(unsigned int* r, unsigned int wc) {
+static int gbk_wctomb(unsigned int *r, const unsigned int wc) {
     int ret;
 
     /* ZINT: Note these mappings U+30FB and U+2015 different from GB 2312 */
@@ -2550,7 +2551,7 @@ static const unsigned short gb18030ext_pagefe[16] = {
   0xa6ed, 0xa6f3, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, /*0x18-0x1f*/
 };
 
-static int gb18030ext_wctomb(unsigned int* r, unsigned int wc) {
+static int gb18030ext_wctomb(unsigned int *r, const unsigned int wc) {
     unsigned short c = 0;
     if (wc == 0x01f9) {
         c = 0xa8bf;
@@ -2724,7 +2725,7 @@ static const unsigned short gb18030uni_ranges[206] = {
   25994, 25998, 26012, 26016, 26110, 26116
 };
 
-static int gb18030uni_wctomb(unsigned int* r1, unsigned int* r2, unsigned int wc) {
+static int gb18030uni_wctomb(unsigned int *r1, unsigned int *r2, const unsigned int wc) {
     unsigned int i = wc;
     if (i >= 0x0080 && i <= 0xffff) {
         if (i == 0xe7c7) {
@@ -2795,7 +2796,7 @@ static const unsigned short gb18030_pua2charset[31*3] = {
   0xe864, 0xe864,  0xfea0,
 };
 
-INTERNAL int gb18030_wctomb_zint(unsigned int* r1, unsigned int* r2, unsigned int wc) {
+INTERNAL int gb18030_wctomb_zint(unsigned int *r1, unsigned int *r2, const unsigned int wc) {
     int ret;
 
     /* Code set 0 (ASCII) */
@@ -2867,13 +2868,14 @@ INTERNAL int gb18030_wctomb_zint(unsigned int* r1, unsigned int* r2, unsigned in
 }
 
 /* Convert UTF-8 string to GB 18030 and place in array of ints */
-INTERNAL int gb18030_utf8tomb(struct zint_symbol *symbol, const unsigned char source[], size_t* p_length, unsigned int* gbdata) {
-    int i, j, error_number, ret;
-    unsigned int length;
+INTERNAL int gb18030_utf8(struct zint_symbol *symbol, const unsigned char source[], int *p_length,
+                unsigned int *gbdata) {
+    int error_number, ret;
+    unsigned int i, j, length;
 #ifndef _MSC_VER
     unsigned int utfdata[*p_length + 1];
 #else
-    unsigned int* utfdata = (unsigned int*) _alloca((*p_length + 1) * sizeof(unsigned int));
+    unsigned int *utfdata = (unsigned int *) _alloca((*p_length + 1) * sizeof(unsigned int));
 #endif
 
     error_number = utf8_to_unicode(symbol, source, utfdata, p_length, 0 /*disallow_4byte*/);
@@ -2901,56 +2903,73 @@ INTERNAL int gb18030_utf8tomb(struct zint_symbol *symbol, const unsigned char so
     return 0;
 }
 
-/* Convert UTF-8 string to single byte ECI and place in array of ints */
-INTERNAL int gb18030_utf8tosb(int eci, const unsigned char source[], size_t* p_length, unsigned int* gbdata) {
-    int error_number;
+/* Convert UTF-8 string to ECI and place in array of ints */
+INTERNAL int gb18030_utf8_to_eci(const int eci, const unsigned char source[], int *p_length, unsigned int *gbdata,
+                const int full_multibyte) {
+
+    if (is_eci_convertible(eci)) {
+        int error_number;
+        int eci_length = get_eci_length(eci, source, *p_length);
 #ifndef _MSC_VER
-    unsigned char single_byte[*p_length + 1];
+        unsigned char converted[eci_length + 1];
 #else
-    unsigned char* single_byte = (unsigned char*) _alloca(*p_length + 1);
+        unsigned char *converted = (unsigned char *) _alloca(eci_length + 1);
 #endif
 
-    error_number = utf_to_eci(eci, source, single_byte, p_length);
-    if (error_number != 0) {
-        /* Note not setting `symbol->errtxt`, up to caller */
-        return error_number;
-    }
+        error_number = utf8_to_eci(eci, source, converted, p_length);
+        if (error_number != 0) {
+            /* Note not setting `symbol->errtxt`, up to caller */
+            return error_number;
+        }
 
-    gb18030_cpy(single_byte, p_length, gbdata);
+        gb18030_cpy(converted, p_length, gbdata, full_multibyte);
+    } else {
+        gb18030_cpy(source, p_length, gbdata, full_multibyte);
+    }
 
     return 0;
 }
 
-/* Copy byte input stream to array of ints, putting double-bytes that match HANXIN Chinese mode in single entry, and quad-bytes in 2 entries */
-INTERNAL void gb18030_cpy(const unsigned char source[], size_t* p_length, unsigned int* gbdata) {
-    int i, j, done;
-    unsigned int length;
+/* If `full_multibyte` set, copy byte input stream to array of ints, putting double-bytes that match HANXIN
+ * Chinese mode in single entry, and quad-bytes in 2 entries. If `full_multibyte` not set, do a straight copy */
+INTERNAL void gb18030_cpy(const unsigned char source[], int *p_length, unsigned int *gbdata,
+                const int full_multibyte) {
+    unsigned int i, j, length;
+    int done;
     unsigned char c1, c2, c3, c4;
-    for (i = 0, j = 0, length = *p_length; i < length; i++, j++) {
-        done = 0;
-        c1 = source[i];
-        if (length - i >= 2) {
-            if (c1 >= 0x81 && c1 <= 0xFE) {
-                c2 = source[i + 1];
-                if ((c2 >= 0x40 && c2 <= 0x7E) || (c2 >= 0x80 && c2 <= 0xFE)) {
-                    gbdata[j] = (c1 << 8) | c2;
-                    i++;
-                    done = 1;
-                } else if (length - i >= 4 && (c2 >= 0x30 && c2 <= 0x39)) {
-                    c3 = source[i + 2];
-                    c4 = source[i + 3];
-                    if ((c3 >= 0x81 && c3 <= 0xFE) && (c4 >= 0x30 && c4 <= 0x39)) {
-                        gbdata[j++] = (c1 << 8) | c2;
-                        gbdata[j] = (c3 << 8) | c4;
-                        i += 3;
+
+    if (full_multibyte) {
+        for (i = 0, j = 0, length = *p_length; i < length; i++, j++) {
+            done = 0;
+            c1 = source[i];
+            if (length - i >= 2) {
+                if (c1 >= 0x81 && c1 <= 0xFE) {
+                    c2 = source[i + 1];
+                    if ((c2 >= 0x40 && c2 <= 0x7E) || (c2 >= 0x80 && c2 <= 0xFE)) {
+                        gbdata[j] = (c1 << 8) | c2;
+                        i++;
                         done = 1;
+                    } else if (length - i >= 4 && (c2 >= 0x30 && c2 <= 0x39)) {
+                        c3 = source[i + 2];
+                        c4 = source[i + 3];
+                        if ((c3 >= 0x81 && c3 <= 0xFE) && (c4 >= 0x30 && c4 <= 0x39)) {
+                            gbdata[j++] = (c1 << 8) | c2;
+                            gbdata[j] = (c3 << 8) | c4;
+                            i += 3;
+                            done = 1;
+                        }
                     }
                 }
             }
+            if (!done) {
+                gbdata[j] = c1;
+            }
         }
-        if (!done) {
-            gbdata[j] = c1;
+        *p_length = j;
+    } else {
+        /* Straight copy */
+        for (i = 0, length = *p_length; i < length; i++) {
+            gbdata[i] = source[i];
         }
     }
-    *p_length = j;
 }

@@ -2,7 +2,7 @@
 
 /*
     libzint - the open source barcode library
-    Copyright (C) 2008-2017 Robin Stuart <rstuart114@gmail.com>
+    Copyright (C) 2008 - 2020 Robin Stuart <rstuart114@gmail.com>
     Including bug fixes by Bryan Hatton
 
     Redistribution and use in source and binary forms, with or without
@@ -32,15 +32,13 @@
  */
 /* vim: set ts=4 sw=4 et : */
 
-#include <string.h>
-#include <stdlib.h>
 #include <stdio.h>
 #ifdef _MSC_VER
 #include <malloc.h>
 #endif
 #include "common.h"
 
-#define DAFTSET	"DAFT"
+#define DAFTSET "DAFT"
 #define KRSET "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 #define KASUTSET "1234567890-abcdefgh"
 #define CHKASUTSET "0123456789-abcdefgh"
@@ -87,10 +85,8 @@ static const char *JapanTable[19] = {
 
 /* Handles the PostNet system used for Zip codes in the US */
 static int postnet(struct zint_symbol *symbol, unsigned char source[], char dest[], int length) {
-    unsigned int i, sum, check_digit;
+    int i, sum, check_digit;
     int error_number;
-
-    error_number = 0;
 
     if (length != 5 && length != 9 && length != 11) {
         strcpy(symbol->errtxt, "480: Input wrong length");
@@ -127,8 +123,6 @@ INTERNAL int post_plot(struct zint_symbol *symbol, unsigned char source[], int l
     int writer;
     int error_number;
 
-    error_number = 0;
-
     error_number = postnet(symbol, source, height_pattern, length);
     if (error_number != 0) {
         return error_number;
@@ -141,7 +135,7 @@ INTERNAL int post_plot(struct zint_symbol *symbol, unsigned char source[], int l
             set_module(symbol, 0, writer);
         }
         set_module(symbol, 1, writer);
-        writer += 3;
+        writer += 2;
     }
     symbol->row_height[0] = 6;
     symbol->row_height[1] = 6;
@@ -151,12 +145,10 @@ INTERNAL int post_plot(struct zint_symbol *symbol, unsigned char source[], int l
     return error_number;
 }
 
-/* Handles the PLANET  system used for item tracking in the US */
+/* Handles the PLANET system used for item tracking in the US */
 static int planet(struct zint_symbol *symbol, unsigned char source[], char dest[], int length) {
-    unsigned int i, sum, check_digit;
+    int i, sum, check_digit;
     int error_number;
-
-    error_number = 0;
 
     if (length != 11 && length != 13) {
         strcpy(symbol->errtxt, "482: Input wrong length");
@@ -193,8 +185,6 @@ INTERNAL int planet_plot(struct zint_symbol *symbol, unsigned char source[], int
     int writer;
     int error_number;
 
-    error_number = 0;
-
     error_number = planet(symbol, source, height_pattern, length);
     if (error_number != 0) {
         return error_number;
@@ -207,12 +197,13 @@ INTERNAL int planet_plot(struct zint_symbol *symbol, unsigned char source[], int
             set_module(symbol, 0, writer);
         }
         set_module(symbol, 1, writer);
-        writer += 3;
+        writer += 2;
     }
     symbol->row_height[0] = 6;
     symbol->row_height[1] = 6;
     symbol->rows = 2;
     symbol->width = writer - 1;
+
     return error_number;
 }
 
@@ -221,7 +212,6 @@ INTERNAL int korea_post(struct zint_symbol *symbol, unsigned char source[], int 
     int total, loop, check, zeroes, error_number;
     char localstr[8], dest[80];
 
-    error_number = 0;
     if (length > 6) {
         strcpy(symbol->errtxt, "484: Input too long");
         return ZINT_ERROR_TOO_LONG;
@@ -252,14 +242,13 @@ INTERNAL int korea_post(struct zint_symbol *symbol, unsigned char source[], int 
     lookup(NEON, KoreaTable, localstr[6], dest);
     expand(symbol, dest);
     ustrcpy(symbol->text, (unsigned char*) localstr);
+
     return error_number;
 }
 
 /* The simplest barcode symbology ever! Supported by MS Word, so here it is!
     glyphs from http://en.wikipedia.org/wiki/Facing_Identification_Mark */
 INTERNAL int fim(struct zint_symbol *symbol, unsigned char source[], int length) {
-
-
     char dest[16] = {0};
 
     if (length > 1) {
@@ -291,12 +280,13 @@ INTERNAL int fim(struct zint_symbol *symbol, unsigned char source[], int length)
     }
 
     expand(symbol, dest);
+
     return 0;
 }
 
 /* Handles the 4 State barcodes used in the UK by Royal Mail */
-static char rm4scc(char source[], unsigned char dest[], int length) {
-    unsigned int i;
+static char rm4scc(unsigned char source[], char dest[], int length) {
+    int i;
     int top, bottom, row, column, check_digit;
     char values[3], set_copy[] = KRSET;
 
@@ -304,10 +294,10 @@ static char rm4scc(char source[], unsigned char dest[], int length) {
     bottom = 0;
 
     /* start character */
-    strcpy((char*) dest, "1");
+    strcpy(dest, "1");
 
     for (i = 0; i < length; i++) {
-        lookup(KRSET, RoyalTable, source[i], (char*) dest);
+        lookup(KRSET, RoyalTable, source[i], dest);
         strcpy(values, RoyalValues[posn(KRSET, source[i])]);
         top += ctoi(values[0]);
         bottom += ctoi(values[1]);
@@ -323,10 +313,10 @@ static char rm4scc(char source[], unsigned char dest[], int length) {
         column = 5;
     }
     check_digit = (6 * row) + column;
-    strcat((char*) dest, RoyalTable[check_digit]);
+    strcat(dest, RoyalTable[check_digit]);
 
     /* stop character */
-    strcat((char*) dest, "0");
+    strcat(dest, "0");
 
     return set_copy[check_digit];
 }
@@ -334,12 +324,10 @@ static char rm4scc(char source[], unsigned char dest[], int length) {
 /* Puts RM4SCC into the data matrix */
 INTERNAL int royal_plot(struct zint_symbol *symbol, unsigned char source[], int length) {
     char height_pattern[210];
-    unsigned int loopey, h;
+    int loopey, h;
     int writer;
     int error_number;
     strcpy(height_pattern, "");
-
-    error_number = 0;
 
     if (length > 50) {
         strcpy(symbol->errtxt, "488: Input too long");
@@ -351,7 +339,7 @@ INTERNAL int royal_plot(struct zint_symbol *symbol, unsigned char source[], int 
         strcpy(symbol->errtxt, "489: Invalid characters in data");
         return error_number;
     }
-    /*check = */rm4scc((char*) source, (unsigned char*) height_pattern, length);
+    /*check = */rm4scc(source, height_pattern, length);
 
     writer = 0;
     h = strlen(height_pattern);
@@ -380,12 +368,10 @@ INTERNAL int royal_plot(struct zint_symbol *symbol, unsigned char source[], int 
    Specification at http://www.tntpost.nl/zakelijk/klantenservice/downloads/kIX_code/download.aspx */
 INTERNAL int kix_code(struct zint_symbol *symbol, unsigned char source[], int length) {
     char height_pattern[75], localstr[20];
-    unsigned int loopey;
+    int loopey;
     int writer, i, h;
-    int error_number; /* zeroes; */
+    int error_number;
     strcpy(height_pattern, "");
-
-    error_number = 0;
 
     if (length > 18) {
         strcpy(symbol->errtxt, "490: Input too long");
@@ -434,7 +420,6 @@ INTERNAL int daft_code(struct zint_symbol *symbol, unsigned char source[], int l
     int writer, i, error_number;
     strcpy(height_pattern, "");
 
-    error_number = 0;
     if (length > 50) {
         strcpy(symbol->errtxt, "492: Input too long");
         return ZINT_ERROR_TOO_LONG;
@@ -489,8 +474,6 @@ INTERNAL int flattermarken(struct zint_symbol *symbol, unsigned char source[], i
     int loop, error_number;
     char dest[512]; /* 90 * 4 + 1 ~ */
 
-    error_number = 0;
-
     if (length > 90) {
         strcpy(symbol->errtxt, "494: Input too long");
         return ZINT_ERROR_TOO_LONG;
@@ -506,6 +489,7 @@ INTERNAL int flattermarken(struct zint_symbol *symbol, unsigned char source[], i
     }
 
     expand(symbol, dest);
+
     return error_number;
 }
 
@@ -528,7 +512,6 @@ INTERNAL int japan_post(struct zint_symbol *symbol, unsigned char source[], int 
         return ZINT_ERROR_TOO_LONG;
     }
 
-    inter_posn = 0;
     error_number = 0;
 
     strcpy(local_source, (char*) source);

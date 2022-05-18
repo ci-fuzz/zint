@@ -8,6 +8,7 @@ build_container: "cifuzz/builders:zint"
 ## unspecified, the image of the build container is used.
 # run_container: "cifuzz/builders:zint"
 
+
 ## A list of source and destination paths. The source paths will be
 ## bind-mounted from the host filesystem to the destination paths in
 ## the container. Environment variables in the paths are expanded from
@@ -22,6 +23,7 @@ build_container: "cifuzz/builders:zint"
 ## Paths to the fuzz tests to execute
 fuzz_tests:
  # - .code-intelligence/fuzz_targets/[b-z]*.cpp
+
   - .code-intelligence/fuzz_targets/all_barcodes_fuzzer.cpp
 
 ## The sanitizers to use for the fuzz tests
