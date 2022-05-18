@@ -2,7 +2,7 @@
 
 /*
     libzint - the open source barcode library
-    Copyright (C) 2008-2017 Robin Stuart <rstuart114@gmail.com>
+    Copyright (C) 2008 - 2020 Robin Stuart <rstuart114@gmail.com>
 
     Redistribution and use in source and binary forms, with or without
     modification, are permitted provided that the following conditions
@@ -35,27 +35,10 @@
 
 /* Code 16k can hold up to 77 characters or 154 numbers */
 
-#include <string.h>
 #include <stdio.h>
-#include <stdlib.h>
+#include <assert.h>
 #include "common.h"
-
-#define TRUE 1
-#define FALSE 0
-#define SHIFTA 90
-#define LATCHA 91
-#define SHIFTB 92
-#define LATCHB 93
-#define SHIFTC 94
-#define LATCHC 95
-#define AORB 96
-#define ABORC 97
-#define CANDB 98
-#define CANDBB 99
-
-INTERNAL int parunmodd(const unsigned char llyth);
-
-static int list[2][170];
+#include "code128.h"
 
 static const char *C16KTable[107] = {
     /* EN 12323 Table 1 - "Code 16K" character encodations */
@@ -89,141 +72,7 @@ static const int C16KStopValues[16] = {
     0, 1, 2, 3, 4, 5, 6, 7, 4, 5, 6, 7, 0, 1, 2, 3
 };
 
-static void grwp16(unsigned int *indexliste) {
-
-    /* bring together same type blocks */
-    if (*(indexliste) > 1) {
-        int i = 1;
-        while(i < (int)*(indexliste)) {
-            if (list[1][i - 1] == list[1][i]) {
-                int j;
-                /* bring together */
-                list[0][i - 1] = list[0][i - 1] + list[0][i];
-                j = i + 1;
-
-                /* decreace the list */
-                while(j < (int)*(indexliste)) {
-                    list[0][j - 1] = list[0][j];
-                    list[1][j - 1] = list[1][j];
-                    j++;
-                }
-                *(indexliste) = *(indexliste) - 1;
-                i--;
-            }
-            i++;
-        }
-    }
-}
-
-/* Implements rules from ISO 15417 Annex E */
-static void dxsmooth16(unsigned int *indexliste) {
-    int i, last, next;
-
-    for(i = 0; i < (int)*(indexliste); i++) {
-        int current = list[1][i];
-        int length = list[0][i];
-        if (i != 0) {
-            last = list[1][i - 1];
-        } else {
-            last = FALSE;
-        }
-        if (i != *(indexliste) - 1) {
-            next = list[1][i + 1];
-        } else {
-            next = FALSE;
-        }
-
-        if (i == 0) {
-            /* first block */
-            if ((*(indexliste) == 1) && ((length == 2) && (current == ABORC))) {
-                /* Rule 1a */
-                list[1][i] = LATCHC;
-            }
-            if (current == ABORC) {
-                if (length >= 4) {
-                    /* Rule 1b */
-                    list[1][i] = LATCHC;
-                } else {
-                    list[1][i] = AORB;
-                    current = AORB;
-                }
-            }
-            if (current == SHIFTA) {
-                /* Rule 1c */
-                list[1][i] = LATCHA;
-            }
-            if ((current == AORB) && (next == SHIFTA)) {
-                /* Rule 1c */
-                list[1][i] = LATCHA;
-                current = LATCHA;
-            }
-            if (current == AORB) {
-                /* Rule 1d */
-                list[1][i] = LATCHB;
-            }
-        } else {
-            if ((current == ABORC) && (length >= 4)) {
-                /* Rule 3 */
-                list[1][i] = LATCHC;
-                current = LATCHC;
-            }
-            if (current == ABORC) {
-                list[1][i] = AORB;
-                current = AORB;
-            }
-            if ((current == AORB) && (last == LATCHA)) {
-                list[1][i] = LATCHA;
-                current = LATCHA;
-            }
-            if ((current == AORB) && (last == LATCHB)) {
-                list[1][i] = LATCHB;
-                current = LATCHB;
-            }
-            if ((current == AORB) && (next == SHIFTA)) {
-                list[1][i] = LATCHA;
-                current = LATCHA;
-            }
-            if ((current == AORB) && (next == SHIFTB)) {
-                list[1][i] = LATCHB;
-                current = LATCHB;
-            }
-            if (current == AORB) {
-                list[1][i] = LATCHB;
-                current = LATCHB;
-            }
-            if ((current == SHIFTA) && (length > 1)) {
-                /* Rule 4 */
-                list[1][i] = LATCHA;
-                current = LATCHA;
-            }
-            if ((current == SHIFTB) && (length > 1)) {
-                /* Rule 5 */
-                list[1][i] = LATCHB;
-                current = LATCHB;
-            }
-            if ((current == SHIFTA) && (last == LATCHA)) {
-                list[1][i] = LATCHA;
-                current = LATCHA;
-            }
-            if ((current == SHIFTB) && (last == LATCHB)) {
-                list[1][i] = LATCHB;
-                current = LATCHB;
-            }
-            if ((current == SHIFTA) && (last == LATCHC)) {
-                list[1][i] = LATCHA;
-                current = LATCHA;
-            }
-            if ((current == SHIFTB) && (last == LATCHC)) {
-                list[1][i] = LATCHB;
-                current = LATCHB;
-            }
-        } /* Rule 2 is implimented elsewhere, Rule 6 is implied */
-    }
-    grwp16(indexliste);
-
-}
-
-static void c16k_set_a(const unsigned char source, unsigned int values[], unsigned int *bar_chars) {
+static void c16k_set_a(const unsigned char source, int values[], int *bar_chars) {
     if (source > 127) {
         if (source < 160) {
             values[(*bar_chars)] = source + 64 - 128;
@@ -240,7 +89,7 @@ static void c16k_set_a(const unsigned char source, unsigned int values[], unsign
     (*bar_chars)++;
 }
 
-static void c16k_set_b(const unsigned char source, unsigned int values[], unsigned int *bar_chars) {
+static void c16k_set_b(const unsigned char source, int values[], int *bar_chars) {
     if (source > 127) {
         values[(*bar_chars)] = source - 32 - 128;
     } else {
@@ -249,7 +98,7 @@ static void c16k_set_b(const unsigned char source, unsigned int values[], unsign
     (*bar_chars)++;
 }
 
-static void c16k_set_c(const unsigned char source_a, unsigned char source_b, unsigned int values[], unsigned int *bar_chars) {
+static void c16k_set_c(const unsigned char source_a, unsigned char source_b, int values[], int *bar_chars) {
     int weight;
 
     weight = (10 * ctoi(source_a)) + ctoi(source_b);
@@ -257,20 +106,24 @@ static void c16k_set_c(const unsigned char source_a, unsigned char source_b, uns
     (*bar_chars)++;
 }
 
-INTERNAL int code16k(struct zint_symbol *symbol, unsigned char source[], const size_t length) {
+INTERNAL int code16k(struct zint_symbol *symbol, unsigned char source[], int length) {
     char width_pattern[100];
-    int current_row, rows_needed, looper, first_check, second_check;
-    int indexchaine, f_state;
-    char set[160] = {' '}, fset[160] = {' '}, mode, last_set, current_set;
-    unsigned int pads_needed, indexliste, i, j, k, m, read, mx_reader;
-    unsigned int values[160] = {0};
-    unsigned int bar_characters;
+    int current_row, rows, looper, first_check, second_check;
+    int indexchaine;
+    int list[2][C128_MAX] = {{0}};
+    char set[C128_MAX] = {0}, fset[C128_MAX], mode, last_set, current_set;
+    int pads_needed, indexliste, i, j, m, read, mx_reader;
+    int values[C128_MAX] = {0};
+    int bar_characters;
     float glyph_count;
-    int errornum, first_sum, second_sum;
-    size_t input_length;
+    int error_number, first_sum, second_sum;
+    int input_length;
     int gs1, c_count;
 
-    errornum = 0;
+    /* Suppresses clang-analyzer-core.UndefinedBinaryOperatorResult warning on fset which is fully set */
+    assert(length > 0);
+
+    error_number = 0;
     strcpy(width_pattern, "");
     input_length = length;
 
@@ -280,7 +133,7 @@ INTERNAL int code16k(struct zint_symbol *symbol, unsigned char source[], const s
         gs1 = 0;
     }
 
-    if (input_length > 157) {
+    if (input_length > C128_MAX) {
         strcpy(symbol->errtxt, "420: Input too long");
         return ZINT_ERROR_TOO_LONG;
     }
@@ -288,43 +141,11 @@ INTERNAL int code16k(struct zint_symbol *symbol, unsigned char source[], const s
     bar_characters = 0;
 
     /* Detect extended ASCII characters */
-    for (i = 0; i < (unsigned int) input_length; i++) {
-        if (source[i] >= 128) {
-            fset[i] = 'f';
-        }
+    for (i = 0; i < input_length; i++) {
+        fset[i] = source[i] >= 128 ? 'f' : ' ';
     }
-    fset[i] = '\0';
+    /* Note to be safe not using extended ASCII latch as not mentioned in BS EN 12323:2005 */
 
-    /* Decide when to latch to extended mode */
-    for (i = 0; i < (unsigned int) input_length; i++) {
-        j = 0;
-        if (fset[i] == 'f') {
-            do {
-                j++;
-            } while (fset[i + j] == 'f');
-            if ((j >= 5) || ((j >= 3) && ((i + j) == (input_length - 1)))) {
-                for (k = 0; k <= j; k++) {
-                    fset[i + k] = 'F';
-                }
-            }
-        }
-    }
-
-    /* Decide if it is worth reverting to 646 encodation for a few characters */
-    if (input_length > 1) {
-        for (i = 1; i < (unsigned int) input_length; i++) {
-            if ((fset[i - 1] == 'F') && (fset[i] == ' ')) {
-                /* Detected a change from 8859-1 to 646 - count how long for */
-                for (j = 0; (fset[i + j] == ' ') && ((i + j) < (unsigned int) input_length); j++);
-                if ((j < 5) || ((j < 3) && ((i + j) == (input_length - 1)))) {
-                    /* Change to shifting back rather than latching back */
-                    for (k = 0; k < j; k++) {
-                        fset[i + k] = 'n';
-                    }
-                }
-            }
-        }
-    }
     /* Detect mode A, B and C characters */
     indexliste = 0;
     indexchaine = 0;
@@ -334,15 +155,14 @@ INTERNAL int code16k(struct zint_symbol *symbol, unsigned char source[], const s
         mode = ABORC;
     } /* FNC1 */
 
-    for (i = 0; i < 160; i++) {
-        list[0][i] = 0;
-    }
-
     do {
         list[1][indexliste] = mode;
         while ((list[1][indexliste] == mode) && (indexchaine < input_length)) {
             list[0][indexliste]++;
             indexchaine++;
+            if (indexchaine == input_length) {
+                break;
+            }
             mode = parunmodd(source[indexchaine]);
             if ((gs1) && (source[indexchaine] == '[')) {
                 mode = ABORC;
@@ -351,7 +171,7 @@ INTERNAL int code16k(struct zint_symbol *symbol, unsigned char source[], const s
         indexliste++;
     } while (indexchaine < input_length);
 
-    dxsmooth16(&indexliste);
+    dxsmooth(list, &indexliste);
 
     /* Put set data into set[] */
     read = 0;
@@ -371,23 +191,6 @@ INTERNAL int code16k(struct zint_symbol *symbol, unsigned char source[], const s
             }
             read++;
         }
-    }
-
-    /* Adjust for strings which start with shift characters - make them latch instead */
-    if (set[0] == 'a') {
-        i = 0;
-        do {
-            set[i] = 'A';
-            i++;
-        } while (set[i] == 'a');
-    }
-
-    if (set[0] == 'b') {
-        i = 0;
-        do {
-            set[i] = 'B';
-            i++;
-        } while (set[i] == 'b');
     }
 
     /* Watch out for odd-length Mode C blocks */
@@ -430,47 +233,43 @@ INTERNAL int code16k(struct zint_symbol *symbol, unsigned char source[], const s
         }
     }
 
+    if (symbol->debug & ZINT_DEBUG_PRINT) {
+        printf("Data: %.*s\n", input_length, source);
+        printf(" Set: %.*s\n", input_length, set);
+        printf("FSet: %.*s\n", input_length, fset);
+    }
+
     /* Make sure the data will fit in the symbol */
-    last_set = ' ';
-    glyph_count = 0.0;
+    last_set = set[0];
+    glyph_count = 0.0f;
     for (i = 0; i < input_length; i++) {
         if ((set[i] == 'a') || (set[i] == 'b')) {
-            glyph_count = glyph_count + 1.0;
+            glyph_count = glyph_count + 1.0f;
         }
-        if ((fset[i] == 'f') || (fset[i] == 'n')) {
-            glyph_count = glyph_count + 1.0;
+        if (fset[i] == 'f') {
+            glyph_count = glyph_count + 1.0f;
         }
         if (((set[i] == 'A') || (set[i] == 'B')) || (set[i] == 'C')) {
             if (set[i] != last_set) {
                 last_set = set[i];
-                glyph_count = glyph_count + 1.0;
+                glyph_count = glyph_count + 1.0f;
             }
         }
         if (i == 0) {
             if ((set[i] == 'B') && (set[1] == 'C')) {
-                glyph_count = glyph_count - 1.0;
+                glyph_count = glyph_count - 1.0f;
             }
             if ((set[i] == 'B') && (set[1] == 'B')) {
                 if (set[2] == 'C') {
-                    glyph_count = glyph_count - 1.0;
+                    glyph_count = glyph_count - 1.0f;
                 }
-            }
-            if (fset[i] == 'F') {
-                glyph_count = glyph_count + 2.0;
-            }
-        } else {
-            if ((fset[i] == 'F') && (fset[i - 1] != 'F')) {
-                glyph_count = glyph_count + 2.0;
-            }
-            if ((fset[i] != 'F') && (fset[i - 1] == 'F')) {
-                glyph_count = glyph_count + 2.0;
             }
         }
 
         if ((set[i] == 'C') && (!((gs1) && (source[i] == '[')))) {
-            glyph_count = glyph_count + 0.5;
+            glyph_count = glyph_count + 0.5f;
         } else {
-            glyph_count = glyph_count + 1.0;
+            glyph_count = glyph_count + 1.0f;
         }
     }
 
@@ -479,21 +278,21 @@ INTERNAL int code16k(struct zint_symbol *symbol, unsigned char source[], const s
         glyph_count--;
     }
 
-    if (glyph_count > 77.0) {
+    if (glyph_count > 77.0f) {
         strcpy(symbol->errtxt, "421: Input too long");
         return ZINT_ERROR_TOO_LONG;
     }
 
     /* Calculate how tall the symbol will be */
-    glyph_count = glyph_count + 2.0;
+    glyph_count = glyph_count + 2.0f;
     i = (int)glyph_count;
-    rows_needed = (i / 5);
+    rows = (i / 5);
     if (i % 5 > 0) {
-        rows_needed++;
+        rows++;
     }
 
-    if (rows_needed == 1) {
-        rows_needed = 2;
+    if (rows == 1) {
+        rows = 2;
     }
 
     /* start with the mode character - Table 2 */
@@ -519,7 +318,7 @@ INTERNAL int code16k(struct zint_symbol *symbol, unsigned char source[], const s
                 m = 6;
             }
         }
-        values[bar_characters] = (7 * (rows_needed - 2)) + m; /* see 4.3.4.2 */
+        values[bar_characters] = (7 * (rows - 2)) + m; /* see 4.3.4.2 */
         values[bar_characters + 1] = 96; /* FNC3 */
         bar_characters += 2;
     } else {
@@ -539,29 +338,11 @@ INTERNAL int code16k(struct zint_symbol *symbol, unsigned char source[], const s
                 m = 6;
             }
         }
-        values[bar_characters] = (7 * (rows_needed - 2)) + m; /* see 4.3.4.2 */
+        values[bar_characters] = (7 * (rows - 2)) + m; /* see 4.3.4.2 */
         bar_characters++;
     }
 
     current_set = set[0];
-    f_state = 0;
-    /* f_state remembers if we are in Extended ASCII mode (value 1) or
-        in ISO/IEC 646 mode (value 0) */
-    if (fset[0] == 'F') {
-        switch (current_set) {
-            case 'A':
-                values[bar_characters] = 101;
-                values[bar_characters + 1] = 101;
-                break;
-            case 'B':
-                values[bar_characters] = 100;
-                values[bar_characters + 1] = 100;
-                break;
-        }
-        bar_characters += 2;
-        f_state = 1;
-    }
-
     read = 0;
 
     /* Encode the data */
@@ -594,40 +375,7 @@ INTERNAL int code16k(struct zint_symbol *symbol, unsigned char source[], const s
             }
         }
 
-        if (read != 0) {
-            if ((fset[read] == 'F') && (f_state == 0)) {
-                /* Latch beginning of extended mode */
-                switch (current_set) {
-                    case 'A':
-                        values[bar_characters] = 101;
-                        values[bar_characters + 1] = 101;
-                        break;
-                    case 'B':
-                        values[bar_characters] = 100;
-                        values[bar_characters + 1] = 100;
-                        break;
-                }
-                bar_characters += 2;
-                f_state = 1;
-            }
-            if ((fset[read] == ' ') && (f_state == 1)) {
-                /* Latch end of extended mode */
-                switch (current_set) {
-                    case 'A':
-                        values[bar_characters] = 101;
-                        values[bar_characters + 1] = 101;
-                        break;
-                    case 'B':
-                        values[bar_characters] = 100;
-                        values[bar_characters + 1] = 100;
-                        break;
-                }
-                bar_characters += 2;
-                f_state = 0;
-            }
-        }
-
-        if ((fset[i] == 'f') || (fset[i] == 'n')) {
+        if (fset[read] == 'f') {
             /* Shift extended mode */
             switch (current_set) {
                 case 'A':
@@ -640,7 +388,7 @@ INTERNAL int code16k(struct zint_symbol *symbol, unsigned char source[], const s
             bar_characters++;
         }
 
-        if ((set[i] == 'a') || (set[i] == 'b')) {
+        if ((set[read] == 'a') || (set[read] == 'b')) {
             /* Insert shift character */
             values[bar_characters] = 98;
             bar_characters++;
@@ -667,7 +415,7 @@ INTERNAL int code16k(struct zint_symbol *symbol, unsigned char source[], const s
             bar_characters++;
             read++;
         }
-    } while (read < ustrlen(source));
+    } while (read < input_length);
 
     pads_needed = 5 - ((bar_characters + 2) % 5);
     if (pads_needed == 5) {
@@ -677,7 +425,7 @@ INTERNAL int code16k(struct zint_symbol *symbol, unsigned char source[], const s
         pads_needed += 8 - (bar_characters + pads_needed);
     }
     for (i = 0; i < pads_needed; i++) {
-        values[bar_characters] = 106;
+        values[bar_characters] = 103;
         bar_characters++;
     }
 
@@ -695,9 +443,23 @@ INTERNAL int code16k(struct zint_symbol *symbol, unsigned char source[], const s
     values[bar_characters + 1] = second_check;
     bar_characters += 2;
 
-    for (current_row = 0; current_row < rows_needed; current_row++) {
-        unsigned int writer;
+    if (symbol->debug & ZINT_DEBUG_PRINT) {
+        printf("Codewords:");
+        for (i = 0; i < bar_characters; i++) {
+            printf(" %d", values[i]);
+        }
+        printf("\n");
+    }
+#ifdef ZINT_TEST
+    if (symbol->debug & ZINT_DEBUG_TEST) {
+        debug_test_codeword_dump_int(symbol, values, bar_characters); /* Missing row start/stop */
+    }
+#endif
+
+    for (current_row = 0; current_row < rows; current_row++) {
+        int writer;
         int flip_flop;
+        int len;
 
         strcpy(width_pattern, "");
         strcat(width_pattern, C16KStartStop[C16KStartValues[current_row]]);
@@ -710,7 +472,7 @@ INTERNAL int code16k(struct zint_symbol *symbol, unsigned char source[], const s
         /* Write the information into the symbol */
         writer = 0;
         flip_flop = 1;
-        for (mx_reader = 0; mx_reader < strlen(width_pattern); mx_reader++) {
+        for (mx_reader = 0, len = (int) strlen(width_pattern); mx_reader < len; mx_reader++) {
             for (looper = 0; looper < ctoi(width_pattern[mx_reader]); looper++) {
                 if (flip_flop == 1) {
                     set_module(symbol, current_row, writer);
@@ -728,7 +490,14 @@ INTERNAL int code16k(struct zint_symbol *symbol, unsigned char source[], const s
         symbol->row_height[current_row] = 10;
     }
 
-    symbol->rows = rows_needed;
+    symbol->rows = rows;
     symbol->width = 70;
-    return errornum;
+
+    symbol->output_options |= BARCODE_BIND;
+
+    if (symbol->border_width == 0) { /* Allow override if non-zero */
+        symbol->border_width = 1; /* BS EN 12323:2005 Section 4.3.7 minimum (note change from previous default 2) */
+    }
+
+    return error_number;
 }

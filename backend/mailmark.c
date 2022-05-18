@@ -2,7 +2,7 @@
 
 /*
     libzint - the open source barcode library
-    Copyright (C) 2008-2018 Robin Stuart <rstuart114@gmail.com>
+    Copyright (C) 2008 - 2020 Robin Stuart <rstuart114@gmail.com>
 
     Redistribution and use in source and binary forms, with or without
     modification, are permitted provided that the following conditions
@@ -39,8 +39,6 @@
  * 
  */
 
-#include <string.h>
-#include <stdlib.h>
 #include <stdio.h>
 #ifdef _MSC_VER
 #include <malloc.h>
@@ -62,13 +60,13 @@ static const char *postcode_format[6] = {
 };
 
 // Data/Check Symbols from Table 5
-static const unsigned short data_symbol_odd[32] = {
+static const unsigned char data_symbol_odd[32] = {
     0x01, 0x02, 0x04, 0x07, 0x08, 0x0B, 0x0D, 0x0E, 0x10, 0x13, 0x15, 0x16,
     0x19, 0x1A, 0x1C, 0x1F, 0x20, 0x23, 0x25, 0x26, 0x29, 0x2A, 0x2C, 0x2F,
     0x31, 0x32, 0x34, 0x37, 0x38, 0x3B, 0x3D, 0x3E
 };
 
-static const unsigned short data_symbol_even[30] = {
+static const unsigned char data_symbol_even[30] = {
     0x03, 0x05, 0x06, 0x09, 0x0A, 0x0C, 0x0F, 0x11, 0x12, 0x14, 0x17, 0x18,
     0x1B, 0x1D, 0x1E, 0x21, 0x22, 0x24, 0x27, 0x28, 0x2B, 0x2D, 0x2E, 0x30,
     0x33, 0x35, 0x36, 0x39, 0x3A, 0x3C
@@ -123,7 +121,7 @@ static int verify_postcode(char* postcode, int type) {
 }
 
 /* Royal Mail Mailmark */
-INTERNAL int mailmark(struct zint_symbol *symbol, const unsigned char source[], const size_t in_length) {
+INTERNAL int mailmark(struct zint_symbol *symbol, unsigned char source[], int length) {
     
     char local_source[28];
     int format;
@@ -134,19 +132,17 @@ INTERNAL int mailmark(struct zint_symbol *symbol, const unsigned char source[], 
     char postcode[10];
     int postcode_type;
     char pattern[10];
-    short int destination_postcode[112];
-    short int a[112];
-    short int b[112];
-    short int temp[112];
-    short int cdv[112];
+    large_int destination_postcode;
+    large_int b;
+    large_int cdv;
     unsigned char data[26];
     int data_top, data_step;
     unsigned char check[7];
     short int extender[27];
     char bar[80];
     int check_count;
-    int i, j;
-    int length = (int) in_length;
+    int i, j, len;
+    rs_t rs;
     
     if (length > 26) {
         strcpy(symbol->errtxt, "580: Input too long");
@@ -171,7 +167,7 @@ INTERNAL int mailmark(struct zint_symbol *symbol, const unsigned char source[], 
     
     to_upper((unsigned char*) local_source);
     
-    if (symbol->debug) {
+    if (symbol->debug & ZINT_DEBUG_PRINT) {
         printf("Producing Mailmark %s\n", local_source);
     }
     
@@ -243,7 +239,6 @@ INTERNAL int mailmark(struct zint_symbol *symbol, const unsigned char source[], 
      * 7 = International designation
      */
     
-    postcode_type = 0;
     if (strcmp(postcode, "XY11     ") == 0) {
         postcode_type = 7;
     } else {
@@ -281,164 +276,107 @@ INTERNAL int mailmark(struct zint_symbol *symbol, const unsigned char source[], 
     }
     
     // Convert postcode to internal user field
-    for (i = 0; i < 112; i++) {
-        destination_postcode[i] = 0;
-        a[i] = 0;
-        b[i] = 0;
-    }
-    
+
+    large_load_u64(&destination_postcode, 0);
+
     if (postcode_type != 7) {
         strcpy(pattern, postcode_format[postcode_type - 1]);
 
-        binary_load(b, "0", 1);
-        
+        large_load_u64(&b, 0);
+
         for (i = 0; i < 9; i++) {
             switch (pattern[i]) {
                 case 'F':
-                    binary_multiply(b, "26");
-                    
-                    binary_load(temp, "0", 1);
-                    for (j = 0; j < 5; j++) {
-                        if (posn(SET_F, postcode[i]) & (0x01 << j)) temp[j] = 1;
-                    }
-
-                    binary_add(b, temp);
+                    large_mul_u64(&b, 26);
+                    large_add_u64(&b, posn(SET_F, postcode[i]));
                     break;
                 case 'L':
-                    binary_multiply(b, "20");
-                    
-                    binary_load(temp, "0", 1);
-                    for (j = 0; j < 5; j++) {
-                        if (posn(SET_L, postcode[i]) & (0x01 << j)) temp[j] = 1;
-                    }
-
-                    binary_add(b, temp);
+                    large_mul_u64(&b, 20);
+                    large_add_u64(&b, posn(SET_L, postcode[i]));
                     break;
                 case 'N':
-                    binary_multiply(b, "10");
-                    
-                    binary_load(temp, "0", 1);
-                    for (j = 0; j < 4; j++) {
-                        if (posn(SET_N, postcode[i]) & (0x01 << j)) temp[j] = 1;
-                    }
-
-                    binary_add(b, temp);
+                    large_mul_u64(&b, 10);
+                    large_add_u64(&b, posn(SET_N, postcode[i]));
                     break;
-                // case 'S' ignorred as value is 0
+                // case 'S' ignored as value is 0
             }
         }
-        
+
+        large_load(&destination_postcode, &b);
+
         // destination_postcode = a + b
-        binary_load(destination_postcode, "0", 1);
-        binary_add(destination_postcode, b);
-        
-        binary_load(a, "1", 1);
+        large_load_u64(&b, 1);
         if (postcode_type == 1) {
-            binary_add(destination_postcode, a);
+            large_add(&destination_postcode, &b);
         }
-        binary_load(temp, "5408000000", 10);
-        binary_add(a, temp);
+        large_add_u64(&b, 5408000000);
         if (postcode_type == 2) {
-            binary_add(destination_postcode, a);
+            large_add(&destination_postcode, &b);
         }
-        binary_load(temp, "5408000000", 10);
-        binary_add(a, temp);
+        large_add_u64(&b, 5408000000);
         if (postcode_type == 3) {
-            binary_add(destination_postcode, a);
+            large_add(&destination_postcode, &b);
         }
-        binary_load(temp, "54080000000", 11);
-        binary_add(a, temp);
+        large_add_u64(&b, 54080000000);
         if (postcode_type == 4) {
-            binary_add(destination_postcode, a);
+            large_add(&destination_postcode, &b);
         }
-        binary_load(temp, "140608000000", 12);
-        binary_add(a, temp);
+        large_add_u64(&b, 140608000000);
         if (postcode_type == 5) {
-            binary_add(destination_postcode, a);
+            large_add(&destination_postcode, &b);
         }
-        binary_load(temp, "208000000", 9);
-        binary_add(a, temp);
+        large_add_u64(&b, 208000000);
         if (postcode_type == 6) {
-            binary_add(destination_postcode, a);
+            large_add(&destination_postcode, &b);
         }
     }
     
     // Conversion from Internal User Fields to Consolidated Data Value
     // Set CDV to 0
-    binary_load(cdv, "0", 1);
-    
+    large_load_u64(&cdv, 0);
+
     // Add Destination Post Code plus DPS
-    binary_add(cdv, destination_postcode);
-    
+    large_add(&cdv, &destination_postcode);
+
     // Multiply by 100,000,000
-    binary_multiply(cdv, "100000000");
-    
+    large_mul_u64(&cdv, 100000000);
+
     // Add Item ID
-    binary_load(temp, "0", 1);
-    for (i = 0; i < 31; i++) {
-        if (0x01 & (item_id >> i)) temp[i] = 1;
-    }
-    binary_add(cdv, temp);
-    
+    large_add_u64(&cdv, item_id);
+
     if (length == 22) {  
         // Barcode C - Multiply by 100
-        binary_multiply(cdv, "100");
+        large_mul_u64(&cdv, 100);
     } else {
         // Barcode L - Multiply by 1,000,000
-        binary_multiply(cdv, "1000000");
+        large_mul_u64(&cdv, 1000000);
     }
-    
+
     // Add Supply Chain ID
-    binary_load(temp, "0", 1);
-    for (i = 0; i < 20; i++) {
-        if (0x01 & (supply_chain_id >> i)) temp[i] = 1;
-    }
-    binary_add(cdv, temp);
-    
+    large_add_u64(&cdv, supply_chain_id);
+
     // Multiply by 15
-    binary_multiply(cdv, "15");
-    
+    large_mul_u64(&cdv, 15);
+
     // Add Class
-    binary_load(temp, "0", 1);
-    for (i = 0; i < 4; i++) {
-        if (0x01 & (mail_class >> i)) temp[i] = 1;
-    }
-    binary_add(cdv, temp);
-    
+    large_add_u64(&cdv, mail_class);
+
     // Multiply by 5
-    binary_multiply(cdv, "5");
-    
+    large_mul_u64(&cdv, 5);
+
     // Add Format
-    binary_load(temp, "0", 1);
-    for (i = 0; i < 4; i++) {
-        if (0x01 & (format >> i)) temp[i] = 1;
-    }
-    binary_add(cdv, temp);
-    
+    large_add_u64(&cdv, format);
+
     // Multiply by 4
-    binary_multiply(cdv, "4");
-    
+    large_mul_u64(&cdv, 4);
+
     // Add Version ID
-    binary_load(temp, "0", 1);
-    for (i = 0; i < 4; i++) {
-        if (0x01 & (version_id >> i)) temp[i] = 1;
-    }
-    binary_add(cdv, temp);
-    
-    if (symbol->debug) {
+    large_add_u64(&cdv, version_id);
+
+    if (symbol->debug & ZINT_DEBUG_PRINT) {
         printf("DPC type %d\n", postcode_type);
         printf("CDV: ");
-        for (i = 96; i >= 0; i-= 4) {
-            j = 0;
-
-            j += cdv[i];
-            j += cdv[i + 1] * 2;
-            j += cdv[i + 2] * 4;
-            j += cdv[i + 3] * 8;
-
-            printf("%c", itoc(j));
-        }
-        printf("\n");
+        large_print(&cdv);
     }
     
     
@@ -453,63 +391,26 @@ INTERNAL int mailmark(struct zint_symbol *symbol, const unsigned char source[], 
     }
     
     // Conversion from Consolidated Data Value to Data Numbers
-    for (i = 0; i < 112; i++) {
-        b[i] = cdv[i];
-    }
-    
-    for (j = data_top; j >= (data_step + 1); j--) {
-        for (i = 0; i < 112; i++) {
-            cdv[i] = b[i];
-            b[i] = 0;
-            a[i] = 0;
-        }
-        a[96] = 1;
-        for (i = 91; i >= 0; i--) {
-            b[i] = !islarger(a, cdv);
-            if (b[i] == 1) {
-                binary_subtract(cdv, a);
-            }
-            shiftdown(a);
-        }
 
-        data[j] = (cdv[4] * 16) + (cdv[3] * 8) + (cdv[2] * 4) +
-                (cdv[1] * 2) + cdv[0];
+    for (j = data_top; j >= (data_step + 1); j--) {
+        data[j] = (unsigned char) large_div_u64(&cdv, 32);
     }
     
     for (j = data_step; j >= 0; j--) {
-        for (i = 0; i < 112; i++) {
-            cdv[i] = b[i];
-            b[i] = 0;
-            a[i] = 0;
-        }
-        a[95] = 1;
-        a[94] = 1;
-        a[93] = 1;
-        a[92] = 1;
-        for (i = 91; i >= 0; i--) {
-            b[i] = !islarger(a, cdv);
-            if (b[i] == 1) {
-                binary_subtract(cdv, a);
-            }
-            shiftdown(a);
-        }
-
-        data[j] = (cdv[4] * 16) + (cdv[3] * 8) + (cdv[2] * 4) +
-                (cdv[1] * 2) + cdv[0];
+        data[j] = (unsigned char) large_div_u64(&cdv, 30);
     }
     
     // Generation of Reed-Solomon Check Numbers
-    rs_init_gf(0x25);
-    rs_init_code(check_count, 1);
-    rs_encode((data_top + 1), data, check);
-    rs_free();
+    rs_init_gf(&rs, 0x25);
+    rs_init_code(&rs, check_count, 1);
+    rs_encode(&rs, (data_top + 1), data, check);
     
     // Append check digits to data
     for (i = 1; i <= check_count; i++) {
         data[data_top + i] = check[check_count - i];
     }
     
-    if (symbol->debug) {
+    if (symbol->debug & ZINT_DEBUG_PRINT) {
         printf("Codewords:  ");
         for (i = 0; i <= data_top + check_count; i++) {
             printf("%d  ", (int) data[i]);
@@ -567,13 +468,13 @@ INTERNAL int mailmark(struct zint_symbol *symbol, const unsigned char source[], 
     
     bar[(length * 3)] = '\0';
     
-    if (symbol->debug) {
+    if (symbol->debug & ZINT_DEBUG_PRINT) {
         printf("Bar pattern: %s\n", bar);
     }
     
     /* Translate 4-state data pattern to symbol */
     j = 0;
-    for (i = 0; i < strlen(bar); i++) {
+    for (i = 0, len = (int) strlen(bar); i < len; i++) {
         if ((bar[i] == 'F') || (bar[i] == 'A')) {
             set_module(symbol, 0, j);
         }

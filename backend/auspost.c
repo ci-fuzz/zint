@@ -2,7 +2,7 @@
 
 /*
     libzint - the open source barcode library
-    Copyright (C) 2008-2017 Robin Stuart <rstuart114@gmail.com>
+    Copyright (C) 2008 - 2020 Robin Stuart <rstuart114@gmail.com>
 
     Redistribution and use in source and binary forms, with or without
     modification, are permitted provided that the following conditions
@@ -55,9 +55,7 @@ static const char *AusBarTable[64] = {
     "332", "333"
 };
 
-#include <string.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include "common.h"
 #include "reedsol.h"
 #ifdef _MSC_VER
@@ -70,24 +68,24 @@ static inline char convert_pattern(char data, int shift) {
 
 /* Adds Reed-Solomon error correction to auspost */
 static void rs_error(char data_pattern[]) {
-    size_t reader, triple_writer = 0;
-    char triple[31];
+    int reader, len, triple_writer = 0;
+    unsigned char triple[31];
     unsigned char result[5];
+    rs_t rs;
 
-    for (reader = 2; reader < strlen(data_pattern); reader += 3, triple_writer++) {
+    for (reader = 2, len = (int) strlen(data_pattern); reader < len; reader += 3, triple_writer++) {
         triple[triple_writer] = convert_pattern(data_pattern[reader], 4)
                 + convert_pattern(data_pattern[reader + 1], 2)
                 + convert_pattern(data_pattern[reader + 2], 0);
     }
 
-    rs_init_gf(0x43);
-    rs_init_code(4, 1);
-    rs_encode(triple_writer, (unsigned char*) triple, result);
+    rs_init_gf(&rs, 0x43);
+    rs_init_code(&rs, 4, 1);
+    rs_encode(&rs, triple_writer, triple, result);
 
     for (reader = 4; reader > 0; reader--) {
         strcat(data_pattern, AusBarTable[(int) result[reader - 1]]);
     }
-    rs_free();
 }
 
 /* Handles Australia Posts's 4 State Codes */
@@ -103,14 +101,19 @@ INTERNAL int australia_post(struct zint_symbol *symbol, unsigned char source[], 
        3 = Tracker only */
     int error_number;
     int writer;
-    unsigned int loopey, reader;
-    size_t h;
+    int loopey, reader;
+    int h;
 
     char data_pattern[200];
     char fcc[3] = {0, 0, 0}, dpid[10];
     char localstr[30];
 
-    error_number = 0;
+    /* Check input immediately to catch nuls */
+    error_number = is_sane(GDSET, source, length);
+    if (error_number == ZINT_ERROR_INVALID_DATA) {
+        strcpy(symbol->errtxt, "404: Invalid characters in data");
+        return error_number;
+    }
     strcpy(localstr, "");
 
     /* Do all of the length checking first to avoid stack smashing */
@@ -163,18 +166,16 @@ INTERNAL int australia_post(struct zint_symbol *symbol, unsigned char source[], 
         localstr[zeroes] = '\0';
     }
 
-    strcat(localstr, (char*) source);
-    h = strlen(localstr);
-    error_number = is_sane(GDSET, (unsigned char *) localstr, h);
-    if (error_number == ZINT_ERROR_INVALID_DATA) {
-        strcpy(symbol->errtxt, "404: Invalid characters in data");
-        return error_number;
+    if (symbol->debug & ZINT_DEBUG_PRINT) {
+        printf("AUSPOST FCC: %s\n", fcc);
     }
 
+    ustrncat(localstr, source, length);
+    h = (int) strlen(localstr);
     /* Verifiy that the first 8 characters are numbers */
     memcpy(dpid, localstr, 8);
     dpid[8] = '\0';
-    error_number = is_sane(NEON, (unsigned char *) dpid, strlen(dpid));
+    error_number = is_sane(NEON, (unsigned char *) dpid, 8);
     if (error_number == ZINT_ERROR_INVALID_DATA) {
         strcpy(symbol->errtxt, "405: Invalid characters in DPID");
         return error_number;
@@ -187,8 +188,6 @@ INTERNAL int australia_post(struct zint_symbol *symbol, unsigned char source[], 
     for (reader = 0; reader < 2; reader++) {
         lookup(NEON, AusNTable, fcc[reader], data_pattern);
     }
-
-    /* printf("AUSPOST FCC: %s  ", fcc); */
 
     /* Delivery Point Identifier (DPID) */
     for (reader = 0; reader < 8; reader++) {
@@ -209,7 +208,7 @@ INTERNAL int australia_post(struct zint_symbol *symbol, unsigned char source[], 
     }
 
     /* Filler bar */
-    h = strlen(data_pattern);
+    h = (int) strlen(data_pattern);
     switch (h) {
         case 22:
         case 37:
@@ -228,7 +227,7 @@ INTERNAL int australia_post(struct zint_symbol *symbol, unsigned char source[], 
 
     /* Turn the symbol into a bar pattern ready for plotting */
     writer = 0;
-    h = strlen(data_pattern);
+    h = (int) strlen(data_pattern);
     for (loopey = 0; loopey < h; loopey++) {
         if ((data_pattern[loopey] == '1') || (data_pattern[loopey] == '0')) {
             set_module(symbol, 0, writer);

@@ -1,6 +1,6 @@
 /***************************************************************************
  *   Copyright (C) 2008 by BogDan Vatra <bogdan@licentia.eu>               *
- *   Copyright (C) 2009-2019 by Robin Stuart <rstuart114@gmail.com>        *
+ *   Copyright (C) 2009-2020 by Robin Stuart <rstuart114@gmail.com>        *
  *                                                                         *
  *   This program is free software: you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -25,10 +25,7 @@
 #include "ui_mainWindow.h"
 #include "barcodeitem.h"
 
-class QAction;
-class QActionGroup;
 class QLabel;
-class QMenu;
 
 class MainWindow : public QWidget, private Ui::mainWindow
 {
@@ -62,10 +59,12 @@ public:
         CODE49           = 24,
         CODE93           = 25,
         CODE_ONE         = 141,
+        DAFT             = 93,
         DATAMATRIX       = 71,
         DPIDENT          = 22,
         DPLEIT           = 21,
         DOTCODE          = 115,
+        DPD              = 96,
         KIX              = 90,
         EAN14            = 72,
         EANX             = 13,
@@ -79,8 +78,8 @@ public:
         RSS14STACK       = 79,
         RSS14STACK_OMNI  = 80,
         HANXIN           = 116,
-        ITF14            = 89,
         ISBNX            = 69,
+        ITF14            = 89,
         JAPANPOST        = 76,
         KOREAPOST        = 77,
         LOGMARS          = 50,
@@ -102,14 +101,16 @@ public:
         TELEPEN          = 32,
         TELEPEN_NUM      = 87,
         PLESSEY          = 86,
-        UPNQR            = 143,
+        ULTRA            = 144,
         UPCA             = 34,
         UPCE             = 37,
-        ONECODE          = 85
+        UPNQR            = 143,
+        ONECODE          = 85,
+        VIN              = 73
     };
 
 public:
-    MainWindow(QWidget* parent = 0, Qt::WindowFlags fl = 0);
+    MainWindow(QWidget* parent = 0, Qt::WindowFlags fl = Qt::WindowFlags());
     ~MainWindow();
 
 
@@ -118,14 +119,37 @@ public slots:
     void change_options();
     void on_fgcolor_clicked();
     void on_bgcolor_clicked();
-    void composite_enable();
+    void composite_ui_set();
     void composite_ean_check();
     void maxi_primary();
     void change_print_scale();
-    void autoheight_clicked();
+    void change_cmyk();
+    void autoheight_ui_set();
+    void HRTShow_ui_set();
+    void dotty_ui_set();
+    void on_encoded();
+	void filter_symbologies();
 
 protected:
     void resizeEvent(QResizeEvent *event);
+	void combobox_item_enabled(QComboBox *comboBox, int index, bool enabled);
+    void upcean_addon_gap(QComboBox *comboBox, QLabel *label, int base);
+    void set_gs1_mode(bool gs1_mode);
+	const char *get_setting_name(int symbology);
+	int get_button_group_index(const QStringList &children);
+	void set_radiobutton_from_setting(QSettings &settings, const QString &setting, const QStringList &children, int default_val = 0);
+	int get_combobox_index(const QString &child);
+	void set_combobox_from_setting(QSettings &settings, const QString &setting, const QString &child, int default_val = 0);
+	int get_checkbox_val(const QString &child);
+	void set_checkbox_from_setting(QSettings &settings, const QString &setting, const QString &child, int default_val = 0);
+	float get_doublespinbox_val(const QString &child);
+	void set_doublespinbox_from_setting(QSettings &settings, const QString &setting, const QString &child, float default_val = 0);
+	QString get_lineedit_val(const QString &child);
+	void set_lineedit_from_setting(QSettings &settings, const QString &setting, const QString &child, const char *default_val = "");
+	int get_spinbox_val(const QString &child);
+	void set_spinbox_from_setting(QSettings &settings, const QString &setting, const QString &child, int default_val = 0);
+	void save_sub_settings(QSettings &settings, int symbology);
+	void load_sub_settings(QSettings &settings, int symbology);
 
 private slots:
     bool save();
@@ -142,6 +166,7 @@ private:
     BarcodeItem m_bc;
     QWidget *m_optionWidget;
     QGraphicsScene *scene;
+	int m_symbology;
 };
 
 #endif
