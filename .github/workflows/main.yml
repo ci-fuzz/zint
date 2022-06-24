@@ -2,7 +2,7 @@ name: CI Fuzz
 
 on:
   pull_request:
-    branches: [ master ]
+    branches: [ vulnerable-version-2.7.1 ]
 
 env:
   FUZZING_SERVER_ADDRESS: app.code-intelligence.com:6773
