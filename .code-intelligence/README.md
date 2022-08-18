@@ -88,12 +88,13 @@ all barcode types into individual fuzz tests. You can see how this is done in
 practice in the following individual fuzz tests (all in
 `.code-intelligence/fuzz_targets`):
 
--   [auspost_fuzzer.cpp](https://github.com/ci-fuzz/zint/blob/master/.code-intelligence/fuzz_targets/auspost_fuzzer.cpp)
--   [codablockf_fuzzer.cpp](https://github.com/ci-fuzz/zint/blob/master/.code-intelligence/fuzz_targets/codablockf_fuzzer.cpp)
--   [codeone_fuzzer.cpp](https://github.com/ci-fuzz/zint/blob/master/.code-intelligence/fuzz_targets/codablockf_fuzzer.cpp)
--   [dotcode_fuzzer.cpp](https://github.com/ci-fuzz/zint/blob/master/.code-intelligence/fuzz_targets/codablockf_fuzzer.cpp)
--   [eanfuzzer_fuzzer.cpp](https://github.com/ci-fuzz/zint/blob/master/.code-intelligence/fuzz_targets/codablockf_fuzzer.cpp)
--   [vin_fuzzer.cpp](https://github.com/ci-fuzz/zint/blob/master/.code-intelligence/fuzz_targets/codablockf_fuzzer.cpp)
+-   [barcodes_1_fuzzer.cpp](https://github.com/ci-fuzz/zint/blob/master/.code-intelligence/fuzz_targets/barcodes_1_fuzzer.cpp)
+-   [barcodes_2_fuzzer.cpp](https://github.com/ci-fuzz/zint/blob/master/.code-intelligence/fuzz_targets/barcodes_2_fuzzer.cpp)
+-   [tbarcodes_8_to_10_fuzzer.cpp](https://github.com/ci-fuzz/zint/blob/master/.code-intelligence/fuzz_targets/tbarcodes_8_to_10_fuzzer.cpp)
+-   [zint_specific_codes_fuzzer](https://github.com/ci-fuzz/zint/blob/master/.code-intelligence/fuzz_targets/zint_specific_codes_fuzzer)
+
+They all use [the same fuzz test code](https://github.com/ci-fuzz/zint/blob/master/backend/fuzzbarcodes.c), but each of them uses a different set of barcodes to pick from.
+
 
 ### Fuzzing in CI/CD
 
