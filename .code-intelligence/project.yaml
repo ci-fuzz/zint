@@ -46,6 +46,8 @@ fuzz_tests:
   - .code-intelligence/fuzz_targets/barcodes_2_fuzzer.cpp
   - .code-intelligence/fuzz_targets/tbarcodes_8_to_10_fuzzer.cpp
   - .code-intelligence/fuzz_targets/zint_specific_codes_fuzzer.cpp
+  - .code-intelligence/fuzz_targets/output_file_format_fuzzer.cpp
+  - .code-intelligence/fuzz_targets/barcode_encode_file_fuzzer.cpp
 
 ## Go packages containing fuzz targets. A fuzzer is created
 ## for each function starting with "Fuzz"
@@ -76,7 +78,7 @@ sanitizers:
 
 ## The run time after which the fuzz tests are cancelled and
 ## considered as having passed. The default is 30 minutes.
-max_runtime: "30m0s"
+max_runtime: "60m0s"
 
 ## The number of parallel executions per fuzz test. The default is 1,
 ## which means for each combination of fuzzing engine and sanitizer,
